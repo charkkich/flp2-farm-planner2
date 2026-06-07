@@ -22,6 +22,31 @@ const STATUS_BADGE: Record<string, string> = {
   'Ready For Transplant': 'bg-sky-700',
 };
 
+// Static area data (m²) for each field — used when Supabase is unavailable
+const FIELD_AREA: Record<string, number> = {
+  E01:1126,E02:1126,E03:1126,E04:1126,E05:1126,E06:1126,E07:1126,E08:1126,E09:1126,
+  E10:1152,E11:1165,E12:1123,E13:1120,E14:1152,E15:1126,E16:1088,E17:653,E18:672,
+  E19:1008,E20:1126,E21:1126,E22:1126,E23:1126,E24:1126,E25:1126,E26:1126,E27:1126,
+  E28:1126,E29:1126,E30:1126,E31:1126,E32:1126,E33:1126,E34:1126,E35:1126,E36:1104,
+  E37:1104,E38:1104,E39:608,E40:608,E41:1440,EX:720,
+  NH01:232,NH02:232,NH03:232,NH04:232,NH05:232,NH06:232,NH07:232,NH08:232,NH09:232,
+  NH10:232,NH11:232,NH12:232,NH13:232,NH14:232,NH15:232,NH16:232,NH17:232,NH18:232,
+  NH19:232,NH20:232,NH21:232,NH22:232,NH23:232,NH24:232,NH25:232,NH26:232,NH27:232,
+  NH28:232,NH29:232,NH30:232,NH31:232,NH32:232,NH33:232,NH34:232,NH35:232,NH36:232,
+  NH37:232,NH38:232,NH39:232,
+  P01:640,P02:888,P03:888,P04:888,P05:888,P06:288,P07:288,P08:614,
+  P09:655,P10:655,P11:655,P12:655,
+  S01:1024,S02:1024,S03:1024,S04:1024,S05:1024,S06:1126,S07:1126,S08:1126,S09:1126,
+  S10:1126,S11:1126,S12:1126,S13:1126,S14:1126,S15:1126,S16:1126,S17:1126,S18:1126,
+  S19:1126,S20:1126,S21:1126,S22:1126,S23:1126,S24:1126,S25:1126,S26:1126,S27:1126,
+  S28:1126,S29:1126,
+  W01:950,W02:912,W03:1144,W04:1144,W05:1144,W06:1144,W07:1144,W08:1144,W09:1144,
+  W10:1144,W11:1144,W12:1144,W13:1144,W14:528,W15:864,W16:1040,W17:1040,W18:1040,
+  W19:1040,W20:1144,W21:1144,W22:1144,W23:1144,W24:1144,W25:1144,W26:1144,W27:1144,
+  W28:605,W29:1144,W30:1144,W31:1144,W32:1144,W33:1144,W34:1144,W35:1104,W37:1040,
+  W39:538,W40:538,W41:538,W42:538,
+};
+
 // Coordinates mapped to 2500×1333 image
 // [code, x, y, w, h]
 const LAYOUT: [string, number, number, number, number][] = [
@@ -178,6 +203,29 @@ export default function FarmMap() {
 
   const fieldMap = Object.fromEntries(fields.map(f => [f.field_code, f]));
 
+  function handleClick(code: string) {
+    const dbField = fieldMap[code];
+    if (dbField) {
+      setSelected(dbField);
+    } else {
+      // Field not in DB yet or Supabase not connected — show static info
+      setSelected({
+        id: '',
+        field_code: code,
+        area_m2: FIELD_AREA[code] ?? 0,
+        status: 'Not Started',
+        planned_transplant_date: null,
+        actual_transplant_date: null,
+        polygon: null,
+        center_lat: null,
+        center_lng: null,
+        created_at: '',
+        updated_at: '',
+        user_id: '',
+      } as Field);
+    }
+  }
+
   async function changeStatus(fieldId: string, status: FieldStatus) {
     setUpdating(true);
     const { error } = await supabase.from('fields').update({ status }).eq('id', fieldId);
@@ -231,31 +279,36 @@ export default function FarmMap() {
             {/* Field overlays */}
             {LAYOUT.map(([code, x, y, w, h]) => {
               const field = fieldMap[code];
-              const fill = field ? STATUS_FILL[field.status] : '#1e293b';
+              const status = field?.status ?? 'Not Started';
+              const isNotStarted = status === 'Not Started';
+              const fill = STATUS_FILL[status];
               const isSelected = selected?.field_code === code;
               const fs = code.length > 4 ? 11 : code.length > 3 ? 13 : 15;
               return (
-                <g key={code} style={{ cursor: 'pointer' }} onClick={() => setSelected(field ?? null)}>
+                <g key={code} style={{ cursor: 'pointer' }} onClick={() => handleClick(code)}>
                   <rect
                     x={x} y={y} width={w} height={h}
                     rx={4}
                     fill={fill}
-                    fillOpacity={field ? 0.55 : 0.35}
-                    stroke={isSelected ? '#ffffff' : 'rgba(0,0,0,0.4)'}
+                    fillOpacity={isSelected ? 0.75 : isNotStarted ? 0.08 : 0.60}
+                    stroke={isSelected ? '#ffffff' : isNotStarted ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.5)'}
                     strokeWidth={isSelected ? 3 : 1}
                   />
-                  <text
-                    x={x + w / 2}
-                    y={y + h / 2 + fs * 0.35}
-                    textAnchor="middle"
-                    fill="#ffffff"
-                    fontSize={fs}
-                    fontWeight="700"
-                    style={{ pointerEvents: 'none', userSelect: 'none', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
-                    filter="url(#shadow)"
-                  >
-                    {code}
-                  </text>
+                  {/* Show label only when selected or has non-default status */}
+                  {(!isNotStarted || isSelected) && (
+                    <text
+                      x={x + w / 2}
+                      y={y + h / 2 + fs * 0.35}
+                      textAnchor="middle"
+                      fill="#ffffff"
+                      fontSize={fs}
+                      fontWeight="700"
+                      style={{ pointerEvents: 'none', userSelect: 'none' }}
+                      filter="url(#shadow)"
+                    >
+                      {code}
+                    </text>
+                  )}
                 </g>
               );
             })}
@@ -304,12 +357,16 @@ export default function FarmMap() {
             </div>
             <div className="space-y-1.5">
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Change Status</p>
-              <Select value={selected.status} onValueChange={v => changeStatus(selected.id, v as FieldStatus)} disabled={updating}>
-                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {FIELD_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              {selected.id ? (
+                <Select value={selected.status} onValueChange={v => changeStatus(selected.id, v as FieldStatus)} disabled={updating}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {FIELD_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <p className="text-xs text-amber-500">Supabase not connected — set env vars in Vercel</p>
+              )}
             </div>
           </div>
         )}

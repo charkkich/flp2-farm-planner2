@@ -1,332 +1,327 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { supabase, type Field, STATUS_COLORS } from '@/lib/supabase';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { useEffect, useState, useCallback } from 'react';
+import { supabase, type Field, type FieldStatus, FIELD_STATUSES } from '@/lib/supabase';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { MapPin, Plus, Trash2, Save, Pencil } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { X } from 'lucide-react';
 
-import {
-  MapContainer,
-  TileLayer,
-  Polygon,
-  Popup,
-  useMapEvents,
-} from 'react-leaflet';
-
-import 'leaflet/dist/leaflet.css';
-
-const statusLeafletColor: Record<string, string> = {
-  'Not Started': '#94a3b8',
-  'Plowing': '#f59e0b',
-  'Harrowing': '#f97316',
-  'Ridging': '#10b981',
-  'Ready For Transplant': '#0ea5e9',
+const STATUS_FILL: Record<string, string> = {
+  'Not Started':        '#475569',
+  'Plowing':            '#b45309',
+  'Harrowing':          '#c2410c',
+  'Ridging':            '#047857',
+  'Ready For Transplant': '#0369a1',
 };
 
-const DEFAULT_CENTER: [number, number] = [18.7883, 98.9853];
-const DEFAULT_ZOOM = 13;
+const STATUS_BADGE: Record<string, string> = {
+  'Not Started':        'bg-slate-500',
+  'Plowing':            'bg-amber-600',
+  'Harrowing':          'bg-orange-600',
+  'Ridging':            'bg-emerald-700',
+  'Ready For Transplant': 'bg-sky-700',
+};
 
-function MapClickHandler({ onMapClick, drawing }: { onMapClick: (lat: number, lng: number) => void; drawing: boolean }) {
-  useMapEvents({
-    click(e) {
-      if (drawing) onMapClick(e.latlng.lat, e.latlng.lng);
-    },
-  });
-  return null;
-}
+// [code, x, y, w, h]  — viewBox "0 0 1760 800"
+const LAYOUT: [string, number, number, number, number][] = [
+  // ── W ZONE ───────────────────────────────────────────────────────
+  ['W37',  188,   5, 308,  58],
+
+  // row 1
+  ['W42',    5,  67,  58,  58], ['W41',  67,  67,  58,  58],
+  ['W14',  133,  67,  72,  58],
+  ['W13',  209,  67,  58,  58], ['W12',  271,  67,  58,  58],
+  ['W11',  333,  67,  58,  58], ['W10',  395,  67,  58,  58],
+  ['W09',  457,  67,  58,  58], ['W08',  519,  67,  58,  58],
+  ['W07',  581,  67,  58,  58], ['W06',  643,  67,  58,  58],
+  ['W05',  705,  67,  58,  58], ['W04',  767,  67,  58,  58],
+  ['W03',  829,  67,  58,  58],
+  ['W01',  895,  67,  58,  58],
+
+  // row 2
+  ['W39',    5, 129,  58,  58], ['W40',   67, 129,  58,  58],
+  ['W16',  133, 129,  58,  58], ['W17',  195, 129,  58,  58],
+  ['W18',  257, 129,  58,  58], ['W19',  319, 129,  58,  58],
+  ['W20',  381, 129,  58,  58], ['W21',  443, 129,  58,  58],
+  ['W22',  505, 129,  58,  58], ['W23',  567, 129,  58,  58],
+  ['W24',  629, 129,  58,  58], ['W25',  691, 129,  58,  58],
+  ['W26',  753, 129,  58,  58], ['W27',  815, 129,  58,  58],
+  ['W02',  895, 129,  58,  58],
+
+  // row 3
+  ['W15',    5, 191, 122, 122],
+  ['W28',  133, 191,  44,  58],
+  ['W29',  181, 191,  58,  58], ['W30',  243, 191,  58,  58],
+  ['W31',  305, 191,  58,  58], ['W32',  367, 191,  58,  58],
+  ['W33',  429, 191,  58,  58], ['W34',  491, 191,  58,  58],
+  ['EX',   557, 191,  58,  58],
+
+  // row 4
+  ['W35',  133, 253, 186,  58],
+
+  // ── S ZONE ───────────────────────────────────────────────────────
+  // row 1
+  ['S05',  623,   5,  58,  58], ['S04',  685,   5,  58,  58],
+  ['S03',  747,   5,  58,  58], ['S02',  809,   5,  58,  58],
+  ['S01',  871,   5,  58,  58],
+
+  // row 2
+  ['S06',  623,  67,  58,  58], ['S07',  685,  67,  58,  58],
+  ['S08',  747,  67,  58,  58], ['S09',  809,  67,  58,  58],
+  ['S10',  871,  67,  58,  58], ['S11',  933,  67,  58,  58],
+
+  // row 3
+  ['S19',  623, 129,  58,  58], ['S18',  685, 129,  58,  58],
+  ['S17',  747, 129,  58,  58], ['S16',  809, 129,  58,  58],
+  ['S15',  871, 129,  58,  58], ['S14',  933, 129,  58,  58],
+  ['S13',  995, 129,  58,  58], ['S12', 1057, 129,  58,  58],
+
+  // row 4
+  ['S20',  623, 191,  58,  58], ['S21',  685, 191,  58,  58],
+  ['S22',  747, 191,  58,  58], ['S23',  809, 191,  58,  58],
+  ['S24',  871, 191,  58,  58], ['S25',  933, 191,  58,  58],
+  ['S26',  995, 191,  58,  58], ['S27', 1057, 191,  58,  58],
+  ['S28', 1119, 191,  58,  58], ['S29', 1181, 191,  58,  58],
+
+  // ── E ZONE ───────────────────────────────────────────────────────
+  // row 1: E01–E06
+  ['E01',  995,   5,  58,  58], ['E02', 1057,   5,  58,  58],
+  ['E03', 1119,   5,  58,  58], ['E04', 1181,   5,  58,  58],
+  ['E05', 1243,   5,  58,  58], ['E06', 1305,   5,  58,  58],
+
+  // row 2: E07–E18
+  ['E07', 1057,  67,  58,  58], ['E08', 1119,  67,  58,  58],
+  ['E09', 1181,  67,  58,  58], ['E10', 1243,  67,  58,  58],
+  ['E11', 1305,  67,  58,  58], ['E12', 1367,  67,  58,  58],
+  ['E13', 1429,  67,  58,  58], ['E14', 1491,  67,  58,  58],
+  ['E15', 1553,  67,  58,  58], ['E16', 1615,  67,  58,  58],
+  ['E17', 1677,  67,  58,  58],
+  ['E18', 1677,   5,  58,  58],
+
+  // row 3: E35–E20 (right side, reversed) + E19 far right
+  ['E35', 1057, 129,  58,  58], ['E34', 1119, 129,  58,  58],
+  ['E33', 1181, 129,  58,  58], ['E32', 1243, 129,  58,  58],
+  ['E31', 1305, 129,  58,  58], ['E30', 1367, 129,  58,  58],
+  ['E29', 1429, 129,  58,  58], ['E28', 1491, 129,  58,  58],
+  ['E27', 1553, 129,  58,  58], ['E26', 1615, 129,  58,  58],
+  ['E25', 1677, 129,  58,  58],
+  ['E19', 1677, 191,  58, 120],
+
+  // row 4: E24–E20
+  ['E24', 1057, 191,  58,  58], ['E23', 1119, 191,  58,  58],
+  ['E22', 1181, 191,  58,  58], ['E21', 1243, 191,  58,  58],
+  ['E20', 1305, 191,  58,  58],
+
+  // E36–E41 lower
+  ['E36', 1057, 315,  58,  58], ['E37', 1119, 315,  58,  58],
+  ['E38', 1181, 315,  58,  58],
+  ['E39', 1243, 315,  44,  44], ['E40', 1291, 315,  44,  44],
+  ['E41', 1057, 377, 172,  76],
+
+  // ── NH ZONE (small plots, 3×13 + 1×6) ───────────────────────────
+  // row 1: NH01–NH11
+  ['NH01', 1243, 377,  44,  44], ['NH02', 1291, 377,  44,  44],
+  ['NH03', 1339, 377,  44,  44], ['NH04', 1387, 377,  44,  44],
+  ['NH05', 1435, 377,  44,  44], ['NH06', 1483, 377,  44,  44],
+  ['NH07', 1531, 377,  44,  44], ['NH08', 1579, 377,  44,  44],
+  ['NH09', 1627, 377,  44,  44], ['NH10', 1675, 377,  44,  44],
+  ['NH11', 1057, 425,  44,  44],
+
+  // row 2: NH12–NH22
+  ['NH12', 1105, 425,  44,  44], ['NH13', 1153, 425,  44,  44],
+  ['NH14', 1201, 425,  44,  44], ['NH15', 1249, 425,  44,  44],
+  ['NH16', 1297, 425,  44,  44], ['NH17', 1345, 425,  44,  44],
+  ['NH18', 1393, 425,  44,  44], ['NH19', 1441, 425,  44,  44],
+  ['NH20', 1489, 425,  44,  44], ['NH21', 1537, 425,  44,  44],
+  ['NH22', 1585, 425,  44,  44],
+
+  // row 3: NH23–NH33
+  ['NH23', 1057, 473,  44,  44], ['NH24', 1105, 473,  44,  44],
+  ['NH25', 1153, 473,  44,  44], ['NH26', 1201, 473,  44,  44],
+  ['NH27', 1249, 473,  44,  44], ['NH28', 1297, 473,  44,  44],
+  ['NH29', 1345, 473,  44,  44], ['NH30', 1393, 473,  44,  44],
+  ['NH31', 1441, 473,  44,  44], ['NH32', 1489, 473,  44,  44],
+  ['NH33', 1537, 473,  44,  44],
+
+  // row 4: NH34–NH39
+  ['NH34', 1057, 521,  44,  44], ['NH35', 1105, 521,  44,  44],
+  ['NH36', 1153, 521,  44,  44], ['NH37', 1201, 521,  44,  44],
+  ['NH38', 1249, 521,  44,  44], ['NH39', 1297, 521,  44,  44],
+
+  // ── P ZONE ───────────────────────────────────────────────────────
+  ['P01',  215, 315,  58,  58],
+  ['P02',  157, 375,  54,  58], ['P03',  101, 375,  54,  58],
+  ['P04',   47, 375,  54,  58], ['P05',    5, 375,  38,  58],
+  ['P06',    5, 317,  38,  54], ['P07',    5, 375,  38,  54],
+  ['P08',   47, 317,  54,  54],
+  ['P09',   47, 437,  54,  58], ['P10',  101, 437,  54,  58],
+  ['P11',  157, 437,  54,  58], ['P12',  211, 437,  54,  58],
+];
 
 export default function FarmMap() {
   const [fields, setFields] = useState<Field[]>([]);
   const [loading, setLoading] = useState(true);
-  const [drawing, setDrawing] = useState(false);
-  const [drawingFieldId, setDrawingFieldId] = useState<string | null>(null);
-  const [currentPoints, setCurrentPoints] = useState<[number, number][]>([]);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [newFieldCode, setNewFieldCode] = useState('');
-  const [newFieldArea, setNewFieldArea] = useState('');
-  const [selectedField, setSelectedField] = useState<Field | null>(null);
+  const [selected, setSelected] = useState<Field | null>(null);
+  const [updating, setUpdating] = useState(false);
   const { toast } = useToast();
 
   const loadFields = useCallback(async () => {
-    const { data } = await supabase.from('fields').select('*').order('field_code');
-    if (data) setFields(data);
-    setLoading(false);
+    try {
+      const { data } = await supabase.from('fields').select('*').order('field_code');
+      if (data) setFields(data);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { loadFields(); }, [loadFields]);
 
-  function handleMapClick(lat: number, lng: number) {
-    if (!drawing) return;
-    setCurrentPoints(prev => [...prev, [lat, lng]]);
-  }
+  const fieldMap = Object.fromEntries(fields.map(f => [f.field_code, f]));
 
-  function startDrawingForNew() {
-    setNewFieldCode('');
-    setNewFieldArea('');
-    setCurrentPoints([]);
-    setDrawing(true);
-    setDrawingFieldId(null);
-  }
-
-  function startDrawingForExisting(field: Field) {
-    setCurrentPoints(field.polygon ? (field.polygon as [number, number][]) : []);
-    setDrawing(true);
-    setDrawingFieldId(field.id);
-  }
-
-  async function saveNewField() {
-    if (!newFieldCode.trim() || currentPoints.length < 3) {
-      toast({ title: 'Error', description: 'Field code and at least 3 polygon points are required.', variant: 'destructive' });
-      return;
-    }
-
-    const center = currentPoints.reduce(
-      (acc, p) => [acc[0] + p[0], acc[1] + p[1]],
-      [0, 0] as [number, number]
-    );
-    const avgLat = center[0] / currentPoints.length;
-    const avgLng = center[1] / currentPoints.length;
-
-    const { error } = await supabase.from('fields').insert({
-      field_code: newFieldCode.trim(),
-      area_m2: parseFloat(newFieldArea) || 0,
-      status: 'Not Started',
-      polygon: currentPoints,
-      center_lat: avgLat,
-      center_lng: avgLng,
-    });
-
+  async function changeStatus(fieldId: string, status: FieldStatus) {
+    setUpdating(true);
+    const { error } = await supabase.from('fields').update({ status }).eq('id', fieldId);
     if (error) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
-      return;
+    } else {
+      toast({ title: 'Updated', description: `Status changed to ${status}` });
+      setFields(prev => prev.map(f => f.id === fieldId ? { ...f, status } : f));
+      setSelected(prev => prev?.id === fieldId ? { ...prev, status } : prev);
     }
-
-    toast({ title: 'Field Created', description: `${newFieldCode} with polygon saved.` });
-    setDrawing(false);
-    setCurrentPoints([]);
-    setDialogOpen(false);
-    loadFields();
-  }
-
-  async function savePolygon() {
-    if (!drawingFieldId || currentPoints.length < 3) {
-      toast({ title: 'Error', description: 'At least 3 points needed for a polygon.', variant: 'destructive' });
-      return;
-    }
-
-    const center = currentPoints.reduce(
-      (acc, p) => [acc[0] + p[0], acc[1] + p[1]],
-      [0, 0] as [number, number]
-    );
-    const avgLat = center[0] / currentPoints.length;
-    const avgLng = center[1] / currentPoints.length;
-
-    const { error } = await supabase.from('fields').update({
-      polygon: currentPoints,
-      center_lat: avgLat,
-      center_lng: avgLng,
-    }).eq('id', drawingFieldId);
-
-    if (error) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
-      return;
-    }
-
-    toast({ title: 'Polygon Saved', description: 'Field boundary updated.' });
-    setDrawing(false);
-    setDrawingFieldId(null);
-    setCurrentPoints([]);
-    loadFields();
-  }
-
-  async function removePolygon(fieldId: string) {
-    const { error } = await supabase.from('fields').update({
-      polygon: null,
-      center_lat: null,
-      center_lng: null,
-    }).eq('id', fieldId);
-
-    if (error) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
-      return;
-    }
-
-    toast({ title: 'Polygon Removed', description: 'Field boundary removed.' });
-    loadFields();
+    setUpdating(false);
   }
 
   if (loading) {
     return (
-      <div className="p-8">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 w-48 bg-muted rounded" />
-          <div className="h-[600px] bg-muted rounded-lg" />
-        </div>
+      <div className="p-8 animate-pulse space-y-4">
+        <div className="h-8 w-48 bg-muted rounded" />
+        <div className="h-[600px] bg-muted rounded-lg" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Farm Map</h1>
-          <p className="text-muted-foreground text-sm mt-1">View and manage field boundaries</p>
-        </div>
-        <div className="flex gap-2">
-          {drawing ? (
-            <>
-              <Button variant="outline" onClick={() => { setDrawing(false); setCurrentPoints([]); setDrawingFieldId(null); }}>
-                Cancel
-              </Button>
-              {drawingFieldId ? (
-                <Button onClick={savePolygon} className="gap-2">
-                  <Save className="w-4 h-4" /> Save Polygon
-                </Button>
-              ) : (
-                <Button onClick={() => setDialogOpen(true)} className="gap-2">
-                  <Save className="w-4 h-4" /> Finish & Save Field
-                </Button>
-              )}
-            </>
-          ) : (
-            <Button onClick={startDrawingForNew} className="gap-2">
-              <Plus className="w-4 h-4" /> Draw New Field
-            </Button>
-          )}
-        </div>
+    <div className="p-6 lg:p-8 space-y-4">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Farm Map</h1>
+        <p className="text-muted-foreground text-sm mt-1">Farm Lert Phan 2 (FLP2) — click a plot to view or update status</p>
       </div>
 
-      {drawing && (
-        <Card className="border-sky-500/30 bg-sky-500/5">
-          <CardContent className="py-3 flex items-center gap-3">
-            <MapPin className="w-5 h-5 text-sky-500 animate-pulse" />
-            <p className="text-sm">
-              <span className="font-medium">Drawing mode active.</span>{' '}
-              Click on the map to add polygon points. {currentPoints.length} point{currentPoints.length !== 1 ? 's' : ''} placed.
-            </p>
-            {currentPoints.length > 0 && (
-              <Button size="sm" variant="outline" onClick={() => setCurrentPoints(prev => prev.slice(0, -1))}>
-                Undo Last Point
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        <div className="lg:col-span-3 h-[600px] rounded-lg overflow-hidden border border-border">
-          <MapContainer center={DEFAULT_CENTER} zoom={DEFAULT_ZOOM} style={{ height: '100%', width: '100%' }}>
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            {fields.filter(f => f.polygon).map(field => (
-              <Polygon
-                key={field.id}
-                positions={field.polygon as [number, number][]}
-                pathOptions={{
-                  color: statusLeafletColor[field.status] ?? '#94a3b8',
-                  fillColor: statusLeafletColor[field.status] ?? '#94a3b8',
-                  fillOpacity: 0.3,
-                  weight: 2,
-                }}
-              >
-                <Popup>
-                  <div className="p-1">
-                    <p className="font-semibold">{field.field_code}</p>
-                    <p className="text-sm text-gray-600">{Number(field.area_m2).toLocaleString()} m²</p>
-                    <p className="text-sm text-gray-600">Status: {field.status}</p>
-                  </div>
-                </Popup>
-              </Polygon>
-            ))}
-            {drawing && currentPoints.length > 0 && (
-              <Polygon
-                positions={currentPoints}
-                pathOptions={{
-                  color: '#0ea5e9',
-                  fillColor: '#0ea5e9',
-                  fillOpacity: 0.2,
-                  weight: 2,
-                  dashArray: '5, 10',
-                }}
-              />
-            )}
-            <MapClickHandler onMapClick={handleMapClick} drawing={drawing} />
-          </MapContainer>
-        </div>
-
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Fields</h2>
-          {fields.length === 0 ? (
-            <Card className="border-border/50">
-              <CardContent className="py-8 text-center text-muted-foreground text-sm">
-                <MapPin className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
-                No fields yet. Click &quot;Draw New Field&quot; to start.
-              </CardContent>
-            </Card>
-          ) : (
-            fields.map(field => (
-              <Card key={field.id} className={`border-border/50 ${selectedField?.id === field.id ? 'ring-2 ring-primary' : ''}`}
-                onClick={() => setSelectedField(field)}>
-                <CardContent className="p-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="font-medium text-sm">{field.field_code}</p>
-                      <p className="text-xs text-muted-foreground">{Number(field.area_m2).toLocaleString()} m²</p>
-                      <Badge variant="secondary" className={`mt-1 text-xs ${STATUS_COLORS[field.status]} text-white`}>
-                        {field.status}
-                      </Badge>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={(e) => { e.stopPropagation(); startDrawingForExisting(field); }}>
-                        <Pencil className="w-3 h-3" />
-                      </Button>
-                      {field.polygon && (
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" onClick={(e) => { e.stopPropagation(); removePolygon(field.id); }}>
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </div>
-      </div>
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Save New Field</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Field Code</Label>
-              <Input value={newFieldCode} onChange={e => setNewFieldCode(e.target.value)} placeholder="e.g. F-001" />
-            </div>
-            <div className="space-y-2">
-              <Label>Area (m²)</Label>
-              <Input type="number" value={newFieldArea} onChange={e => setNewFieldArea(e.target.value)} placeholder="e.g. 5000" />
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {currentPoints.length} polygon points captured from map.
-            </p>
+      {/* Legend */}
+      <div className="flex flex-wrap gap-3 text-xs">
+        {FIELD_STATUSES.map(s => (
+          <div key={s} className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm" style={{ background: STATUS_FILL[s] }} />
+            <span className="text-muted-foreground">{s}</span>
           </div>
-          <DialogFooter>
-            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
-            <Button onClick={saveNewField}>Create Field</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        ))}
+      </div>
+
+      <div className="flex gap-4">
+        {/* Map */}
+        <div className="flex-1 overflow-auto rounded-lg border border-border bg-[#1a1f2e]" style={{ maxHeight: '72vh' }}>
+          <svg
+            viewBox="0 0 1760 600"
+            width="1760"
+            height="600"
+            style={{ display: 'block', minWidth: '1760px' }}
+          >
+            {/* Zone labels */}
+            <text x="450" y="340" fill="#374151" fontSize="18" fontWeight="bold" opacity="0.4">W ZONE</text>
+            <text x="750" y="280" fill="#374151" fontSize="18" fontWeight="bold" opacity="0.4">S ZONE</text>
+            <text x="1300" y="280" fill="#374151" fontSize="18" fontWeight="bold" opacity="0.4">E ZONE</text>
+            <text x="1150" y="575" fill="#374151" fontSize="16" fontWeight="bold" opacity="0.4">NH ZONE</text>
+            <text x="60"  y="500" fill="#374151" fontSize="16" fontWeight="bold" opacity="0.4">P ZONE</text>
+
+            {LAYOUT.map(([code, x, y, w, h]) => {
+              const field = fieldMap[code];
+              const fill = field ? STATUS_FILL[field.status] ?? '#475569' : '#2d3748';
+              const isSelected = selected?.field_code === code;
+              const fontSize = code.length > 3 ? 7 : code.length > 2 ? 8 : 9;
+              return (
+                <g key={code} style={{ cursor: 'pointer' }} onClick={() => setSelected(field ?? null)}>
+                  <rect
+                    x={x} y={y} width={w} height={h}
+                    rx={3}
+                    fill={fill}
+                    fillOpacity={field ? 0.85 : 0.3}
+                    stroke={isSelected ? '#f8fafc' : '#0f172a'}
+                    strokeWidth={isSelected ? 2.5 : 1}
+                  />
+                  <text
+                    x={x + w / 2} y={y + h / 2 + (fontSize / 2) - 1}
+                    textAnchor="middle"
+                    fill="#f1f5f9"
+                    fontSize={fontSize}
+                    fontWeight="600"
+                    style={{ pointerEvents: 'none', userSelect: 'none' }}
+                  >
+                    {code}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+
+        {/* Sidebar */}
+        {selected && (
+          <div className="w-64 shrink-0 rounded-lg border border-border bg-card p-4 space-y-4 self-start">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold">{selected.field_code}</h2>
+              <button onClick={() => setSelected(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Area</span>
+                <span className="font-medium">{Number(selected.area_m2).toLocaleString()} m²</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Status</span>
+                <Badge className={`${STATUS_BADGE[selected.status]} text-white text-xs`}>
+                  {selected.status}
+                </Badge>
+              </div>
+              {selected.planned_transplant_date && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Planned</span>
+                  <span>{selected.planned_transplant_date}</span>
+                </div>
+              )}
+              {selected.actual_transplant_date && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Actual</span>
+                  <span>{selected.actual_transplant_date}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Change Status</p>
+              <Select
+                value={selected.status}
+                onValueChange={v => changeStatus(selected.id, v as FieldStatus)}
+                disabled={updating}
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FIELD_STATUSES.map(s => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -7,12 +7,20 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { X, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 
-const STATUS_FILL: Record<string, string> = {
+// ─── Status colours ─────────────────────────────────────────────────────────
+const STATUS_COLOR: Record<string, string> = {
   'Not Started':          '#64748b',
   'Plowing':              '#d97706',
   'Harrowing':            '#ea580c',
   'Ridging':              '#16a34a',
   'Ready For Transplant': '#0284c7',
+};
+const STATUS_BG: Record<string, string> = {
+  'Not Started':          '#f1f5f9',
+  'Plowing':              '#fef3c7',
+  'Harrowing':            '#ffedd5',
+  'Ridging':              '#dcfce7',
+  'Ready For Transplant': '#e0f2fe',
 };
 const STATUS_BADGE: Record<string, string> = {
   'Not Started':          'bg-slate-500',
@@ -22,7 +30,7 @@ const STATUS_BADGE: Record<string, string> = {
   'Ready For Transplant': 'bg-sky-700',
 };
 
-// Static area data (m²) for each field — used when Supabase is unavailable
+// ─── Field areas (m²) ────────────────────────────────────────────────────────
 const FIELD_AREA: Record<string, number> = {
   E01:1126,E02:1126,E03:1126,E04:1126,E05:1126,E06:1126,E07:1126,E08:1126,E09:1126,
   E10:1152,E11:1165,E12:1123,E13:1120,E14:1152,E15:1126,E16:1088,E17:653,E18:672,
@@ -47,199 +55,108 @@ const FIELD_AREA: Record<string, number> = {
   W39:538,W40:538,W41:538,W42:538,
 };
 
-// Coordinates mapped to 2500×1333 image
-// [code, x, y, w, h]  — measured from aerial photo
+// ─── Field layout as % of 2500×1333 image ────────────────────────────────────
+// [code, x%, y%, w%, h%]  — convert from pixels: x%=px/2500, y%=py/1333
 const LAYOUT: [string, number, number, number, number][] = [
-  // ── W ZONE ────────────────────────────────────────────────────────────
-  // W37: large open field at top of farm
-  ['W37',  352,  18, 460, 108],
+  // W zone
+  ['W37', 14.1, 1.4, 18.4,  8.1],
+  ['W42',  6.8,19.7,  2.9,  6.8],['W41', 10.2,19.7,  2.9,  6.8],
+  ['W39',  6.8,28.1,  2.9,  6.0],['W40', 10.2,28.1,  2.9,  6.0],
+  ['W15',  6.6,34.5,  5.6,  6.8],
+  ['W14', 10.5,14.8,  1.2,  9.9],
+  ['W13', 11.9,14.8,  2.4,  9.9],['W12', 14.5,14.8,  2.4,  9.9],
+  ['W11', 17.0,14.8,  2.4,  9.9],
+  ['W10', 20.6,14.8,  2.1,  9.9],['W09', 22.9,14.8,  2.1,  9.9],
+  ['W08', 25.2,14.8,  2.1,  9.9],['W07', 27.4,14.8,  2.1,  9.9],
+  ['W06', 29.7,14.8,  2.1,  9.9],['W05', 32.0,14.8,  2.1,  9.9],
+  ['W04', 34.3,14.8,  2.1,  9.9],['W03', 36.6,14.8,  2.1,  9.9],
+  ['W01', 38.8,13.1,  3.5,  5.9],
+  ['W16', 10.5,28.9,  2.2, 10.7],['W17', 12.9,28.9,  2.2, 10.7],
+  ['W18', 15.3,28.9,  2.2, 10.7],['W19', 17.7,28.9,  2.2, 10.7],
+  ['W20', 20.6,28.9,  1.9, 10.7],['W21', 22.7,28.9,  1.9, 10.7],
+  ['W22', 24.8,28.9,  1.9, 10.7],['W23', 27.0,28.9,  1.9, 10.7],
+  ['W24', 29.1,28.9,  1.9, 10.7],['W25', 31.2,28.9,  1.9, 10.7],
+  ['W26', 33.3,28.9,  1.9, 10.7],['W27', 35.4,28.9,  1.9, 10.7],
+  ['W02', 38.8,28.9,  3.5,  6.0],
+  ['W34', 10.5,41.6,  2.5, 10.5],['W33', 13.1,41.6,  2.5, 10.5],
+  ['W32', 15.8,41.6,  2.5, 10.5],['W31', 18.4,41.6,  2.5, 10.5],
+  ['W30', 21.0,41.6,  2.5, 10.5],['W29', 23.7,41.6,  2.5, 10.5],
+  ['W28', 35.1,41.6,  3.1, 10.5],
+  ['EX',  38.8,36.0,  2.8,  7.1],
+  ['W35', 22.2,59.6,  3.5,  6.8],
 
-  // Left-column small buildings
-  ['W42',  170, 262,  73,  90],
-  ['W41',  256, 262,  73,  90],
-  ['W39',  170, 375,  73,  80],
-  ['W40',  256, 375,  73,  80],
-  ['W15',  165, 460, 140,  90],
+  // S zone
+  ['S05', 42.5,12.0,  2.9, 13.1],['S04', 45.6,12.0,  2.5, 13.1],
+  ['S03', 48.3,12.0,  2.5, 13.1],['S02', 51.0,12.0,  2.5, 13.1],
+  ['S01', 53.6,12.0,  2.5, 13.1],
+  ['S06', 42.5,28.7,  2.4, 14.1],['S07', 45.0,28.7,  2.4, 14.1],
+  ['S08', 47.6,28.7,  2.4, 14.1],['S09', 50.2,28.7,  2.4, 14.1],
+  ['S10', 52.7,28.7,  2.4, 14.1],['S11', 55.3,28.7,  1.6, 14.1],
+  ['S19', 42.5,44.4,  1.7, 11.1],['S18', 44.4,44.4,  1.7, 11.1],
+  ['S17', 46.2,44.4,  1.7, 11.1],['S16', 48.1,44.4,  1.7, 11.1],
+  ['S15', 50.0,44.4,  1.7, 11.1],['S14', 51.9,44.4,  1.7, 11.1],
+  ['S13', 53.8,44.4,  1.7, 11.1],['S12', 55.6,44.4,  1.7, 11.1],
+  ['S20', 42.5,58.7,  1.4, 13.5],['S21', 43.9,58.7,  1.4, 13.5],
+  ['S22', 45.4,58.7,  1.4, 13.5],['S23', 46.9,58.7,  1.4, 13.5],
+  ['S24', 48.4,58.7,  1.4, 13.5],['S25', 49.9,58.7,  1.4, 13.5],
+  ['S26', 51.4,58.7,  1.4, 13.5],['S27', 52.8,58.7,  1.4, 13.5],
+  ['S28', 54.3,58.7,  1.4, 13.5],['S29', 55.8,58.7,  1.4, 13.5],
 
-  // Row 1 (main greenhouses y=198, h=132)
-  ['W14',  262, 198,  30, 132],  // narrow building
-  ['W13',  298, 198,  60, 132],
-  ['W12',  362, 198,  60, 132],
-  ['W11',  426, 198,  60, 132],
-  // road gap ~486–515
-  ['W10',  515, 198,  52, 132],
-  ['W09',  572, 198,  52, 132],
-  ['W08',  629, 198,  52, 132],
-  ['W07',  686, 198,  52, 132],
-  ['W06',  743, 198,  52, 132],
-  ['W05',  800, 198,  52, 132],
-  ['W04',  857, 198,  52, 132],
-  ['W03',  914, 198,  52, 132],
-  ['W01',  970, 175,  88,  78],  // standalone right
+  // E zone
+  ['E01', 57.0,12.0,  2.3, 13.1],['E02', 59.5,12.0,  2.3, 13.1],
+  ['E03', 62.0,12.0,  2.3, 13.1],['E04', 64.4,12.0,  2.3, 13.1],
+  ['E05', 66.9,12.0,  2.3, 13.1],['E06', 69.4,12.0,  2.3, 13.1],
+  ['E07', 72.8,12.0,  3.1, 13.1],['E08', 76.1,12.0,  3.1, 13.1],
+  ['E09', 79.4,12.0,  3.1, 13.1],['E10', 82.6,12.0,  3.1, 13.1],
+  ['E11', 86.2,12.0,  1.7, 13.1],['E12', 88.1,12.0,  1.7, 13.1],
+  ['E13', 90.0,12.0,  1.7, 13.1],['E14', 91.8,12.0,  1.7, 13.1],
+  ['E15', 93.7,12.0,  1.7, 13.1],['E16', 95.6,12.0,  1.7, 13.1],
+  ['E17', 97.5,12.0,  1.1, 13.1],['E18', 98.7,12.0,  1.2, 20.3],
+  ['E35', 57.0,28.7,  2.3, 14.1],['E34', 59.5,28.7,  2.3, 14.1],
+  ['E33', 62.0,28.7,  2.3, 14.1],['E32', 64.4,28.7,  2.3, 14.1],
+  ['E31', 66.9,28.7,  2.3, 14.1],['E30', 69.4,28.7,  2.3, 14.1],
+  ['E29', 72.8,28.7,  2.4, 14.1],['E28', 75.4,28.7,  2.4, 14.1],
+  ['E27', 77.9,28.7,  2.4, 14.1],['E26', 80.5,28.7,  2.4, 14.1],
+  ['E25', 83.0,28.7,  2.4, 14.1],['E24', 85.6,28.7,  2.4, 14.1],
+  ['E23', 88.2,28.7,  2.4, 14.1],['E22', 90.7,28.7,  2.4, 14.1],
+  ['E21', 93.3,28.7,  2.4, 14.1],['E20', 95.8,28.7,  2.4, 14.1],
+  ['E19', 98.4,28.7,  1.4, 14.1],
+  ['E36', 57.0,44.3,  5.5, 11.1],['E37', 62.7,44.3,  5.5, 11.1],
+  ['E38', 68.4,44.3,  5.5, 11.1],
+  ['E39', 85.0,44.3,  3.8,  9.0],['E40', 89.0,44.3,  3.8,  9.0],
+  ['E41', 57.0,73.9,  7.8,  7.5],
 
-  // Row 2 (y=385, h=142)
-  ['W16',  262, 385,  56, 142],
-  ['W17',  322, 385,  56, 142],
-  ['W18',  382, 385,  56, 142],
-  ['W19',  442, 385,  56, 142],
-  // road gap ~498–515
-  ['W20',  515, 385,  48, 142],
-  ['W21',  568, 385,  48, 142],
-  ['W22',  621, 385,  48, 142],
-  ['W23',  674, 385,  48, 142],
-  ['W24',  727, 385,  48, 142],
-  ['W25',  780, 385,  48, 142],
-  ['W26',  833, 385,  48, 142],
-  ['W27',  886, 385,  48, 142],
-  ['W02',  970, 385,  88,  80],  // standalone right
+  // NH zone
+  ['NH01',54.8,57.2,  1.7,  6.0],['NH02',56.6,57.2,  1.7,  6.0],
+  ['NH03',58.5,57.2,  1.7,  6.0],['NH04',60.4,57.2,  1.7,  6.0],
+  ['NH05',62.2,57.2,  1.7,  6.0],['NH06',64.4,57.2,  1.7,  6.0],
+  ['NH07',66.3,57.2,  1.7,  6.0],['NH08',68.2,57.2,  1.7,  6.0],
+  ['NH09',70.2,57.2,  1.7,  6.0],['NH10',72.1,57.2,  1.7,  6.0],
+  ['NH11',74.0,57.2,  1.7,  6.0],
+  ['NH22',54.8,63.5,  1.7,  6.2],['NH21',56.6,63.5,  1.7,  6.2],
+  ['NH20',58.5,63.5,  1.7,  6.2],['NH19',60.4,63.5,  1.7,  6.2],
+  ['NH18',62.2,63.5,  1.7,  6.2],['NH17',64.4,63.5,  1.7,  6.2],
+  ['NH16',66.3,63.5,  1.7,  6.2],['NH15',68.2,63.5,  1.7,  6.2],
+  ['NH14',70.2,63.5,  1.7,  6.2],['NH13',72.1,63.5,  1.7,  6.2],
+  ['NH12',74.0,63.5,  1.7,  6.2],
+  ['NH23',54.8,70.5,  1.7,  5.9],['NH24',56.6,70.5,  1.7,  5.9],
+  ['NH25',58.5,70.5,  1.7,  5.9],['NH26',60.4,70.5,  1.7,  5.9],
+  ['NH27',62.2,70.5,  1.7,  5.9],['NH28',64.4,70.5,  1.7,  5.9],
+  ['NH29',66.3,70.5,  1.7,  5.9],['NH30',68.2,70.5,  1.7,  5.9],
+  ['NH31',70.2,70.5,  1.7,  5.9],['NH32',72.1,70.5,  1.7,  5.9],
+  ['NH33',74.0,70.5,  1.7,  5.9],
+  ['NH34',54.8,76.9,  1.7,  4.9],['NH35',56.6,76.9,  1.7,  4.9],
+  ['NH36',58.5,76.9,  1.7,  4.9],['NH37',60.4,76.9,  1.7,  4.9],
+  ['NH38',62.2,76.9,  1.7,  4.9],['NH39',64.4,76.9,  1.7,  4.9],
 
-  // Row 3 (y=555, h=140)
-  ['W34',  262, 555,  62, 140],
-  ['W33',  328, 555,  62, 140],
-  ['W32',  394, 555,  62, 140],
-  ['W31',  460, 555,  62, 140],
-  ['W30',  526, 555,  62, 140],
-  ['W29',  592, 555,  62, 140],
-  ['W28',  878, 555,  78, 140],  // standalone far right
-  ['EX',   970, 480,  70,  95],  // extra building
-
-  // Row 4
-  ['W35',  555, 795,  88,  90],
-
-  // ── S ZONE ────────────────────────────────────────────────────────────
-  // Row 1 (y=160, h=175)
-  ['S05', 1062, 160,  72, 175],
-  ['S04', 1140, 160,  62, 175],
-  ['S03', 1207, 160,  62, 175],
-  ['S02', 1274, 160,  62, 175],
-  ['S01', 1341, 160,  62, 175],
-
-  // Row 2 (y=382, h=188)
-  ['S06', 1062, 382,  60, 188],
-  ['S07', 1126, 382,  60, 188],
-  ['S08', 1190, 382,  60, 188],
-  ['S09', 1254, 382,  60, 188],
-  ['S10', 1318, 382,  60, 188],
-  ['S11', 1382, 382,  40, 188],
-
-  // Row 3 (y=592, h=148) — S19 leftmost, S12 rightmost
-  ['S19', 1062, 592,  43, 148],
-  ['S18', 1109, 592,  43, 148],
-  ['S17', 1156, 592,  43, 148],
-  ['S16', 1203, 592,  43, 148],
-  ['S15', 1250, 592,  43, 148],
-  ['S14', 1297, 592,  43, 148],
-  ['S13', 1344, 592,  43, 148],
-  ['S12', 1391, 592,  43, 148],
-
-  // Row 4 (y=782, h=180) — S20 leftmost
-  ['S20', 1062, 782,  34, 180],
-  ['S21', 1099, 782,  34, 180],
-  ['S22', 1136, 782,  34, 180],
-  ['S23', 1173, 782,  34, 180],
-  ['S24', 1210, 782,  34, 180],
-  ['S25', 1247, 782,  34, 180],
-  ['S26', 1284, 782,  34, 180],
-  ['S27', 1321, 782,  34, 180],
-  ['S28', 1358, 782,  34, 180],
-  ['S29', 1395, 782,  34, 180],
-
-  // ── E ZONE ────────────────────────────────────────────────────────────
-  // Row 1 left group: E01–E06 (y=160, h=175)
-  ['E01', 1425, 160,  58, 175],
-  ['E02', 1487, 160,  58, 175],
-  ['E03', 1549, 160,  58, 175],
-  ['E04', 1611, 160,  58, 175],
-  ['E05', 1673, 160,  58, 175],
-  ['E06', 1735, 160,  58, 175],
-  // road gap ~1793–1820
-  // Row 1 right group: E07–E18
-  ['E07', 1820, 160,  78, 175],
-  ['E08', 1902, 160,  78, 175],
-  ['E09', 1984, 160,  78, 175],
-  ['E10', 2066, 160,  78, 175],
-  ['E11', 2155, 160,  43, 175],
-  ['E12', 2202, 160,  43, 175],
-  ['E13', 2249, 160,  43, 175],
-  ['E14', 2296, 160,  43, 175],
-  ['E15', 2343, 160,  43, 175],
-  ['E16', 2390, 160,  43, 175],
-  ['E17', 2437, 160,  28, 175],
-  ['E18', 2468, 160,  30, 270],  // tall narrow, spans to row 2
-
-  // Row 2 left group: E35–E30 (y=382, h=188)
-  ['E35', 1425, 382,  58, 188],
-  ['E34', 1487, 382,  58, 188],
-  ['E33', 1549, 382,  58, 188],
-  ['E32', 1611, 382,  58, 188],
-  ['E31', 1673, 382,  58, 188],
-  ['E30', 1735, 382,  58, 188],
-  // Row 2 right group: E29–E19
-  ['E29', 1820, 382,  60, 188],
-  ['E28', 1884, 382,  60, 188],
-  ['E27', 1948, 382,  60, 188],
-  ['E26', 2012, 382,  60, 188],
-  ['E25', 2076, 382,  60, 188],
-  ['E24', 2140, 382,  60, 188],
-  ['E23', 2204, 382,  60, 188],
-  ['E22', 2268, 382,  60, 188],
-  ['E21', 2332, 382,  60, 188],
-  ['E20', 2396, 382,  60, 188],
-  ['E19', 2460, 382,  35, 188],
-
-  // Row 3: E36–E38 (large), E39–E40 (y=590, h=148)
-  ['E36', 1425, 590, 138, 148],
-  ['E37', 1568, 590, 138, 148],
-  ['E38', 1711, 590, 138, 148],
-  ['E39', 2125, 590,  95, 120],
-  ['E40', 2225, 590,  95, 120],
-
-  // E41 large building (y=985, h=100)
-  ['E41', 1425, 985, 195, 100],
-
-  // ── NH ZONE (small green plots, 43px wide) ───────────────────────────
-  // Row 1: NH01–NH11 (y=762, h=80)
-  ['NH01', 1370, 762,  43,  80], ['NH02', 1418, 762,  43,  80],
-  ['NH03', 1466, 762,  43,  80], ['NH04', 1514, 762,  43,  80],
-  ['NH05', 1562, 762,  43,  80], ['NH06', 1610, 762,  43,  80],
-  ['NH07', 1658, 762,  43,  80], ['NH08', 1706, 762,  43,  80],
-  ['NH09', 1754, 762,  43,  80], ['NH10', 1802, 762,  43,  80],
-  ['NH11', 1850, 762,  43,  80],
-
-  // Row 2: NH22–NH12 L→R (y=850, h=82)
-  ['NH22', 1370, 850,  43,  82], ['NH21', 1418, 850,  43,  82],
-  ['NH20', 1466, 850,  43,  82], ['NH19', 1514, 850,  43,  82],
-  ['NH18', 1562, 850,  43,  82], ['NH17', 1610, 850,  43,  82],
-  ['NH16', 1658, 850,  43,  82], ['NH15', 1706, 850,  43,  82],
-  ['NH14', 1754, 850,  43,  82], ['NH13', 1802, 850,  43,  82],
-  ['NH12', 1850, 850,  43,  82],
-
-  // Row 3: NH23–NH33 (y=940, h=78)
-  ['NH23', 1370, 940,  43,  78], ['NH24', 1418, 940,  43,  78],
-  ['NH25', 1466, 940,  43,  78], ['NH26', 1514, 940,  43,  78],
-  ['NH27', 1562, 940,  43,  78], ['NH28', 1610, 940,  43,  78],
-  ['NH29', 1658, 940,  43,  78], ['NH30', 1706, 940,  43,  78],
-  ['NH31', 1754, 940,  43,  78], ['NH32', 1802, 940,  43,  78],
-  ['NH33', 1850, 940,  43,  78],
-
-  // Row 4: NH34–NH39 (y=1025, h=65)
-  ['NH34', 1370, 1025,  43,  65], ['NH35', 1418, 1025,  43,  65],
-  ['NH36', 1466, 1025,  43,  65], ['NH37', 1514, 1025,  43,  65],
-  ['NH38', 1562, 1025,  43,  65], ['NH39', 1610, 1025,  43,  65],
-
-  // ── P ZONE ────────────────────────────────────────────────────────────
-  ['P01',  297, 584, 251,  91],   // large Tomato block top-right
-  ['P06',  130, 676,  55,  62],   // left column
-  ['P07',  130, 742,  55,  62],
-  ['P08',  130, 815,  55,  65],
-  ['P05',  192, 676,  95,  98],   // Tomato row
-  ['P04',  292, 676,  95,  98],
-  ['P03',  392, 676,  95,  98],
-  ['P02',  490, 676,  58,  98],
-  ['P09',  192, 800,  95,  98],   // Pepper row
-  ['P10',  292, 800,  95,  98],
-  ['P11',  392, 800,  95,  98],
-  ['P12',  490, 800,  58,  98],
+  // P zone
+  ['P01', 11.9,43.8, 10.0,  6.8],
+  ['P06',  5.2,50.7,  2.2,  4.7],['P07',  5.2,55.7,  2.2,  4.7],
+  ['P08',  5.2,61.1,  2.2,  4.9],
+  ['P05',  7.7,50.7,  3.8,  7.4],['P04', 11.7,50.7,  3.8,  7.4],
+  ['P03', 15.7,50.7,  3.8,  7.4],['P02', 19.6,50.7,  2.3,  7.4],
+  ['P09',  7.7,60.1,  3.8,  7.4],['P10', 11.7,60.1,  3.8,  7.4],
+  ['P11', 15.7,60.1,  3.8,  7.4],['P12', 19.6,60.1,  2.3,  7.4],
 ];
 
 export default function FarmMap() {
@@ -247,22 +164,32 @@ export default function FarmMap() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Field | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [tooltip, setTooltip] = useState<{ code: string; x: number; y: number } | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const { toast } = useToast();
 
-  // Zoom / pan — stored in refs so wheel handler closure stays fresh
+  // zoom / pan
   const zoomRef = useRef(1);
   const panRef = useRef({ x: 0, y: 0 });
-  const [, forceRender] = useState(0);          // trigger re-render after zoom/pan
-  const containerRef = useRef<HTMLDivElement>(null);
-  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [, rerender] = useState(0);
   const isDragging = useRef(false);
-  const hasDragged = useRef(false);             // distinguish click from drag
+  const hasDragged = useRef(false);
   const dragOrigin = useRef({ mx: 0, my: 0, px: 0, py: 0 });
+
+  // refs for canvas rendering
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const hoveredRef = useRef<string | null>(null);
+  const fieldMapRef = useRef<Record<string, Field>>({});
 
   const loadFields = useCallback(async () => {
     try {
       const { data } = await supabase.from('fields').select('*').order('field_code');
-      if (data) setFields(data);
+      if (data) {
+        setFields(data);
+        fieldMapRef.current = Object.fromEntries(data.map(f => [f.field_code, f]));
+      }
     } catch { /* ignore */ } finally {
       setLoading(false);
     }
@@ -270,7 +197,97 @@ export default function FarmMap() {
 
   useEffect(() => { loadFields(); }, [loadFields]);
 
-  // Attach wheel listener directly (passive:false so preventDefault works)
+  // Update fieldMapRef whenever fields changes
+  useEffect(() => {
+    fieldMapRef.current = Object.fromEntries(fields.map(f => [f.field_code, f]));
+  }, [fields]);
+
+  // ─── Canvas drawing ──────────────────────────────────────────────────────
+  const drawCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const img = imgRef.current;
+    if (!canvas || !img || !img.complete) return;
+
+    const W = canvas.width;
+    const H = canvas.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, W, H);
+
+    const fmap = fieldMapRef.current;
+    const hovered = hoveredRef.current;
+    const selCode = selected?.field_code ?? null;
+
+    for (const [code, xPct, yPct, wPct, hPct] of LAYOUT) {
+      const f = fmap[code];
+      const status = f?.status ?? 'Not Started';
+
+      if (statusFilter !== 'all' && status !== statusFilter) continue;
+
+      const px = xPct / 100 * W;
+      const py = yPct / 100 * H;
+      const pw = wPct / 100 * W;
+      const ph = hPct / 100 * H;
+
+      const isHovered = hovered === code;
+      const isSel = selCode === code;
+      const col = STATUS_COLOR[status] ?? '#64748b';
+
+      ctx.save();
+      ctx.globalAlpha = isSel ? 0.88 : isHovered ? 0.78 : 0.62;
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.roundRect(px, py, pw, ph, 3);
+      ctx.fill();
+
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = isSel ? '#fff' : isHovered ? '#fff' : 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = isSel ? 2.5 : isHovered ? 1.5 : 1;
+      ctx.beginPath();
+      ctx.roundRect(px, py, pw, ph, 3);
+      ctx.stroke();
+      ctx.restore();
+
+      // Label — only if big enough
+      if (pw > 14 && ph > 10) {
+        const fs = Math.min(12, Math.max(7, pw / code.length * 1.4));
+        ctx.save();
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${fs}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = 'rgba(0,0,0,0.85)';
+        ctx.shadowBlur = 3;
+        ctx.fillText(code, px + pw / 2, py + ph / 2);
+        ctx.restore();
+      }
+    }
+  }, [selected, statusFilter]);
+
+  // Re-draw when state changes
+  useEffect(() => { drawCanvas(); }, [drawCanvas, fields]);
+
+  // Resize canvas to match displayed image size
+  const syncCanvasSize = useCallback(() => {
+    const canvas = canvasRef.current;
+    const img = imgRef.current;
+    if (!canvas || !img) return;
+    const rect = img.getBoundingClientRect();
+    if (rect.width > 0 && (canvas.width !== Math.round(rect.width) || canvas.height !== Math.round(rect.height))) {
+      canvas.width = Math.round(rect.width);
+      canvas.height = Math.round(rect.height);
+      drawCanvas();
+    }
+  }, [drawCanvas]);
+
+  useEffect(() => {
+    const obs = new ResizeObserver(syncCanvasSize);
+    if (imgRef.current) obs.observe(imgRef.current);
+    return () => obs.disconnect();
+  }, [syncCanvasSize]);
+
+  // ─── Native wheel for zoom ────────────────────────────────────────────────
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -278,8 +295,7 @@ export default function FarmMap() {
       e.preventDefault();
       const rect = el!.getBoundingClientRect();
       const factor = e.deltaY < 0 ? 1.18 : 1 / 1.18;
-      const newZoom = Math.max(0.25, Math.min(12, zoomRef.current * factor));
-      // Zoom toward cursor
+      const newZoom = Math.max(0.5, Math.min(12, zoomRef.current * factor));
       const cx = e.clientX - rect.left - rect.width / 2;
       const cy = e.clientY - rect.top - rect.height / 2;
       panRef.current = {
@@ -287,35 +303,97 @@ export default function FarmMap() {
         y: cy - (cy - panRef.current.y) * (newZoom / zoomRef.current),
       };
       zoomRef.current = newZoom;
-      forceRender(n => n + 1);
+      rerender(n => n + 1);
     }
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
-  const fieldMap = Object.fromEntries(fields.map(f => [f.field_code, f]));
+  // ─── Canvas mouse events ─────────────────────────────────────────────────
+  function getHitField(e: React.MouseEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const W = canvas.width;
+    const H = canvas.height;
+    for (const [code, xPct, yPct, wPct, hPct] of LAYOUT) {
+      const px = xPct / 100 * W;
+      const py = yPct / 100 * H;
+      const pw = wPct / 100 * W;
+      const ph = hPct / 100 * H;
+      if (mx >= px && mx <= px + pw && my >= py && my <= py + ph) return code;
+    }
+    return null;
+  }
 
-  function handleFieldClick(code: string) {
-    if (hasDragged.current) return;  // ignore if mouse moved during mousedown
-    const dbField = fieldMap[code];
-    if (dbField) {
-      setSelected(dbField);
+  function onCanvasMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (isDragging.current) return;
+    const code = getHitField(e);
+    if (code !== hoveredRef.current) {
+      hoveredRef.current = code;
+      drawCanvas();
+    }
+    if (code) {
+      const rect = canvasRef.current!.getBoundingClientRect();
+      setTooltip({ code, x: e.clientX - rect.left, y: e.clientY - rect.top });
+    } else {
+      setTooltip(null);
+    }
+  }
+
+  function onCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (hasDragged.current) return;
+    const code = getHitField(e);
+    if (!code) return;
+    const f = fieldMapRef.current[code];
+    if (f) {
+      setSelected(f);
     } else {
       setSelected({
-        id: '',
-        field_code: code,
-        area_m2: FIELD_AREA[code] ?? 0,
-        status: 'Not Started',
-        planned_transplant_date: null,
-        actual_transplant_date: null,
-        polygon: null,
-        center_lat: null,
-        center_lng: null,
-        created_at: '',
-        updated_at: '',
-        user_id: '',
+        id: '', field_code: code, area_m2: FIELD_AREA[code] ?? 0,
+        status: 'Not Started', planned_transplant_date: null,
+        actual_transplant_date: null, polygon: null,
+        center_lat: null, center_lng: null,
+        created_at: '', updated_at: '', user_id: '',
       } as Field);
     }
+  }
+
+  function onCanvasLeave() {
+    hoveredRef.current = null;
+    setTooltip(null);
+    drawCanvas();
+  }
+
+  // ─── Drag / pan ─────────────────────────────────────────────────────────
+  function onMouseDown(e: React.MouseEvent) {
+    if (e.button !== 0) return;
+    isDragging.current = true;
+    hasDragged.current = false;
+    dragOrigin.current = { mx: e.clientX, my: e.clientY, px: panRef.current.x, py: panRef.current.y };
+  }
+
+  function onMouseMove(e: React.MouseEvent) {
+    if (!isDragging.current) return;
+    const dx = e.clientX - dragOrigin.current.mx;
+    const dy = e.clientY - dragOrigin.current.my;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) hasDragged.current = true;
+    panRef.current = { x: dragOrigin.current.px + dx, y: dragOrigin.current.py + dy };
+    rerender(n => n + 1);
+  }
+
+  function onMouseUp() { isDragging.current = false; }
+
+  function zoomBy(f: number) {
+    zoomRef.current = Math.max(0.5, Math.min(12, zoomRef.current * f));
+    rerender(n => n + 1);
+  }
+
+  function resetView() {
+    zoomRef.current = 1; panRef.current = { x: 0, y: 0 };
+    rerender(n => n + 1);
   }
 
   async function changeStatus(fieldId: string, status: FieldStatus) {
@@ -331,37 +409,13 @@ export default function FarmMap() {
     setUpdating(false);
   }
 
-  function onMouseDown(e: React.MouseEvent) {
-    if (e.button !== 0) return;
-    isDragging.current = true;
-    hasDragged.current = false;
-    dragOrigin.current = { mx: e.clientX, my: e.clientY, px: panRef.current.x, py: panRef.current.y };
-  }
-
-  function onMouseMove(e: React.MouseEvent) {
-    if (!isDragging.current) return;
-    const dx = e.clientX - dragOrigin.current.mx;
-    const dy = e.clientY - dragOrigin.current.my;
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) hasDragged.current = true;
-    panRef.current = { x: dragOrigin.current.px + dx, y: dragOrigin.current.py + dy };
-    forceRender(n => n + 1);
-  }
-
-  function onMouseUp() { isDragging.current = false; }
-
-  function zoomBy(factor: number) {
-    zoomRef.current = Math.max(0.25, Math.min(12, zoomRef.current * factor));
-    forceRender(n => n + 1);
-  }
-
-  function resetView() {
-    zoomRef.current = 1;
-    panRef.current = { x: 0, y: 0 };
-    forceRender(n => n + 1);
-  }
-
   const zoom = zoomRef.current;
   const pan = panRef.current;
+
+  // Counts by status
+  const statusCounts = Object.fromEntries(
+    FIELD_STATUSES.map(s => [s, fields.filter(f => f.status === s).length])
+  );
 
   if (loading) {
     return (
@@ -373,35 +427,42 @@ export default function FarmMap() {
   }
 
   return (
-    <div className="p-6 lg:p-8 space-y-4">
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Farm Map</h1>
-          <p className="text-muted-foreground text-sm mt-1">Farm Lert Phan 2 (FLP2) — scroll to zoom · drag to pan · click plot to edit</p>
-        </div>
-        <div className="flex flex-wrap gap-3 text-xs">
-          {FIELD_STATUSES.map(s => (
-            <div key={s} className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-sm" style={{ background: STATUS_FILL[s] }} />
-              <span className="text-muted-foreground">{s}</span>
-            </div>
-          ))}
-        </div>
+    <div className="p-4 lg:p-6 space-y-4">
+      {/* Header */}
+      <div>
+        <h1 className="text-xl font-bold tracking-tight">Farm Map</h1>
+        <p className="text-muted-foreground text-xs mt-0.5">Farm Lert Phan 2 · scroll to zoom · drag to pan · click field to edit</p>
+      </div>
+
+      {/* Status filter chips */}
+      <div className="flex flex-wrap gap-2 text-xs">
+        <button
+          onClick={() => setStatusFilter('all')}
+          className={`px-3 py-1 rounded-full border transition-colors ${statusFilter === 'all' ? 'bg-foreground text-background border-foreground' : 'border-border text-muted-foreground hover:text-foreground'}`}
+        >
+          All ({fields.length})
+        </button>
+        {FIELD_STATUSES.map(s => (
+          <button
+            key={s}
+            onClick={() => setStatusFilter(s)}
+            className={`px-3 py-1 rounded-full border transition-colors ${statusFilter === s ? 'text-white border-transparent' : 'border-border text-muted-foreground hover:text-foreground'}`}
+            style={statusFilter === s ? { background: STATUS_COLOR[s] } : {}}
+          >
+            <span className="inline-block w-2 h-2 rounded-sm mr-1.5 align-middle" style={{ background: STATUS_COLOR[s] }} />
+            {s} ({statusCounts[s] ?? 0})
+          </button>
+        ))}
       </div>
 
       <div className="flex gap-4 items-start">
+        {/* Map area */}
         <div className="flex-1 flex flex-col gap-2">
           {/* Zoom toolbar */}
           <div className="flex items-center gap-2">
-            <button onClick={() => zoomBy(1.3)} className="p-1.5 rounded border border-border bg-card hover:bg-muted" title="Zoom in">
-              <ZoomIn className="w-4 h-4" />
-            </button>
-            <button onClick={() => zoomBy(1 / 1.3)} className="p-1.5 rounded border border-border bg-card hover:bg-muted" title="Zoom out">
-              <ZoomOut className="w-4 h-4" />
-            </button>
-            <button onClick={resetView} className="p-1.5 rounded border border-border bg-card hover:bg-muted" title="Reset">
-              <Maximize2 className="w-4 h-4" />
-            </button>
+            <button onClick={() => zoomBy(1.3)} className="p-1.5 rounded border border-border bg-card hover:bg-muted" title="Zoom in"><ZoomIn className="w-4 h-4" /></button>
+            <button onClick={() => zoomBy(1/1.3)} className="p-1.5 rounded border border-border bg-card hover:bg-muted" title="Zoom out"><ZoomOut className="w-4 h-4" /></button>
+            <button onClick={resetView} className="p-1.5 rounded border border-border bg-card hover:bg-muted" title="Reset"><Maximize2 className="w-4 h-4" /></button>
             <span className="text-xs text-muted-foreground">{Math.round(zoom * 100)}%</span>
           </div>
 
@@ -409,111 +470,125 @@ export default function FarmMap() {
           <div
             ref={containerRef}
             className="overflow-hidden rounded-lg border border-border bg-black select-none"
-            style={{ height: '75vh', cursor: isDragging.current ? 'grabbing' : 'grab' }}
+            style={{ height: '72vh', cursor: isDragging.current ? 'grabbing' : 'grab' }}
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
             onMouseLeave={onMouseUp}
           >
-            {/* Inner div that moves & scales */}
+            {/* Zoom/pan wrapper */}
             <div
-              ref={wrapperRef}
               style={{
                 position: 'absolute',
-                top: '50%',
-                left: '50%',
+                top: '50%', left: '50%',
                 transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})`,
                 transformOrigin: 'center center',
-                width: 2500,
-                height: 1333,
               }}
             >
-              <svg viewBox="0 0 2500 1333" width="2500" height="1333" style={{ display: 'block' }}>
-                <image href="/farm-map.jpg" x="0" y="0" width="2500" height="1333" />
-
-                {LAYOUT.map(([code, x, y, w, h]) => {
-                  const field = fieldMap[code];
-                  const status = field?.status ?? 'Not Started';
-                  const fill = STATUS_FILL[status];
-                  const isSelected = selected?.field_code === code;
-                  const fs = code.length > 4 ? 11 : code.length > 3 ? 13 : 15;
+              {/* Image + canvas overlay together */}
+              <div style={{ position: 'relative', display: 'inline-block', lineHeight: 0 }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  ref={imgRef}
+                  src="/farm-map.jpg"
+                  alt="Farm aerial map"
+                  style={{ display: 'block', maxWidth: '90vw', maxHeight: '65vh', userSelect: 'none' }}
+                  onLoad={syncCanvasSize}
+                  draggable={false}
+                />
+                {/* Canvas exactly covers the image */}
+                <canvas
+                  ref={canvasRef}
+                  style={{ position: 'absolute', inset: 0, pointerEvents: 'auto' }}
+                  onMouseMove={onCanvasMouseMove}
+                  onClick={onCanvasClick}
+                  onMouseLeave={onCanvasLeave}
+                />
+                {/* Tooltip */}
+                {tooltip && (() => {
+                  const f = fieldMapRef.current[tooltip.code];
+                  const status = f?.status ?? 'Not Started';
                   return (
-                    <g key={code} style={{ cursor: 'pointer' }} onClick={() => handleFieldClick(code)}>
-                      <rect
-                        x={x} y={y} width={w} height={h}
-                        rx={3}
-                        fill={fill}
-                        fillOpacity={isSelected ? 0.85 : 0.60}
-                        stroke={isSelected ? '#fff' : 'rgba(0,0,0,0.7)'}
-                        strokeWidth={isSelected ? 3 : 1.5}
-                      />
-                      <text
-                        x={x + w / 2} y={y + h / 2 + fs * 0.36}
-                        textAnchor="middle"
-                        fill="#fff"
-                        fontSize={fs}
-                        fontWeight="700"
-                        style={{ pointerEvents: 'none' }}
-                        filter="url(#sh)"
-                      >{code}</text>
-                    </g>
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: tooltip.x + 12,
+                        top: tooltip.y - 10,
+                        pointerEvents: 'none',
+                        zIndex: 20,
+                        background: 'rgba(0,0,0,0.85)',
+                        color: '#fff',
+                        fontSize: 11,
+                        padding: '6px 10px',
+                        borderRadius: 6,
+                        lineHeight: 1.5,
+                        whiteSpace: 'nowrap',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+                      }}
+                    >
+                      <strong>{tooltip.code}</strong>
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          marginLeft: 6,
+                          fontSize: 10,
+                          padding: '1px 6px',
+                          borderRadius: 4,
+                          background: STATUS_COLOR[status],
+                          color: '#fff',
+                        }}
+                      >{status}</span>
+                      {f && <div style={{ fontSize: 10, color: '#ccc', marginTop: 2 }}>{Number(f.area_m2).toLocaleString()} m²</div>}
+                    </div>
                   );
-                })}
-
-                <defs>
-                  <filter id="sh" x="-25%" y="-25%" width="150%" height="150%">
-                    <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#000" floodOpacity="1" />
-                  </filter>
-                </defs>
-              </svg>
+                })()}
+              </div>
             </div>
           </div>
         </div>
 
         {/* Sidebar */}
         {selected && (
-          <div className="w-60 shrink-0 rounded-lg border border-border bg-card p-4 space-y-4 self-start sticky top-4">
+          <div className="w-56 shrink-0 rounded-lg border border-border bg-card p-4 space-y-3 self-start sticky top-4 text-sm">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold">{selected.field_code}</h2>
-              <button onClick={() => setSelected(null)} className="text-muted-foreground hover:text-foreground">
-                <X className="w-4 h-4" />
-              </button>
+              <h2 className="text-base font-bold">{selected.field_code}</h2>
+              <button onClick={() => setSelected(null)} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
             </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Area</span>
                 <span className="font-medium">{Number(selected.area_m2).toLocaleString()} m²</span>
               </div>
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center text-xs">
                 <span className="text-muted-foreground">Status</span>
-                <Badge className={`${STATUS_BADGE[selected.status]} text-white text-xs`}>
+                <span className="inline-block text-[10px] px-2 py-0.5 rounded text-white" style={{ background: STATUS_COLOR[selected.status] }}>
                   {selected.status}
-                </Badge>
+                </span>
               </div>
               {selected.planned_transplant_date && (
-                <div className="flex justify-between">
+                <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Planned</span>
                   <span>{selected.planned_transplant_date}</span>
                 </div>
               )}
               {selected.actual_transplant_date && (
-                <div className="flex justify-between">
+                <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Actual</span>
                   <span>{selected.actual_transplant_date}</span>
                 </div>
               )}
             </div>
             <div className="space-y-1.5">
-              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Change Status</p>
+              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Change Status</p>
               {selected.id ? (
                 <Select value={selected.status} onValueChange={v => changeStatus(selected.id, v as FieldStatus)} disabled={updating}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {FIELD_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                   </SelectContent>
                 </Select>
               ) : (
-                <p className="text-xs text-amber-500">Supabase not connected — set env vars in Vercel</p>
+                <p className="text-xs text-amber-500">Not in database</p>
               )}
             </div>
           </div>

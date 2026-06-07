@@ -11,15 +11,20 @@ export default function WeatherPage() {
   const [loading, setLoading] = useState(true);
 
   const loadWeather = useCallback(async () => {
-    const today = new Date().toISOString().split('T')[0];
-    const { data } = await supabase
-      .from('weather_forecasts')
-      .select('*')
-      .gte('forecast_date', today)
-      .order('forecast_date')
-      .limit(7);
-    if (data) setForecasts(data);
-    setLoading(false);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const { data } = await supabase
+        .from('weather_forecasts')
+        .select('*')
+        .gte('forecast_date', today)
+        .order('forecast_date')
+        .limit(7);
+      if (data) setForecasts(data);
+    } catch {
+      // silently handle connection errors
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { loadWeather(); }, [loadWeather]);

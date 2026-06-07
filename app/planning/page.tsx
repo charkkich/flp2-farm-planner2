@@ -20,9 +20,14 @@ export default function PlanningPage() {
   const { toast } = useToast();
 
   const loadFields = useCallback(async () => {
-    const { data } = await supabase.from('fields').select('*').order('field_code');
-    if (data) setFields(data);
-    setLoading(false);
+    try {
+      const { data } = await supabase.from('fields').select('*').order('field_code');
+      if (data) setFields(data);
+    } catch {
+      // silently handle connection errors
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { loadFields(); }, [loadFields]);

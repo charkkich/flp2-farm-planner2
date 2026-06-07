@@ -25,15 +25,20 @@ export default function DashboardPage() {
   }, []);
 
   async function loadData() {
-    const today = new Date().toISOString().split('T')[0];
-    const [fieldsRes, weatherRes] = await Promise.all([
-      supabase.from('fields').select('*').order('field_code'),
-      supabase.from('weather_forecasts').select('*').gte('forecast_date', today).order('forecast_date').limit(7),
-    ]);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const [fieldsRes, weatherRes] = await Promise.all([
+        supabase.from('fields').select('*').order('field_code'),
+        supabase.from('weather_forecasts').select('*').gte('forecast_date', today).order('forecast_date').limit(7),
+      ]);
 
-    if (fieldsRes.data) setFields(fieldsRes.data);
-    if (weatherRes.data) setForecasts(weatherRes.data);
-    setLoading(false);
+      if (fieldsRes.data) setFields(fieldsRes.data);
+      if (weatherRes.data) setForecasts(weatherRes.data);
+    } catch {
+      // silently handle connection errors
+    } finally {
+      setLoading(false);
+    }
   }
 
   const totalFields = fields.length;

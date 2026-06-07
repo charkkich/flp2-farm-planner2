@@ -1,0 +1,797 @@
+
+<h2 class="sr-only">FLP2 Farm Operation Center — แผนที่ใช้รูปฟาร์มจริงเป็นพื้นหลัง, เรดาร์ซ้อนบน Google Maps</h2>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+.app{display:flex;flex-direction:column;height:720px;background:var(--color-background-tertiary);border-radius:var(--border-radius-lg);overflow:hidden;border:0.5px solid var(--color-border-tertiary)}
+.topbar{display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--color-background-primary);border-bottom:0.5px solid var(--color-border-tertiary);flex-shrink:0}
+.logo{width:30px;height:30px;background:#155d31;border-radius:var(--border-radius-md);display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px}
+.topbar-title{font-size:13px;font-weight:500}
+.topbar-sub{font-size:10px;color:var(--color-text-secondary)}
+.live-dot{width:7px;height:7px;background:#155d31;border-radius:50%;margin-left:auto;animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.nav{display:flex;background:var(--color-background-primary);border-bottom:0.5px solid var(--color-border-tertiary);flex-shrink:0}
+.nb{flex:1;padding:7px 4px 6px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:10px;color:var(--color-text-secondary);display:flex;flex-direction:column;align-items:center;gap:2px;transition:color .15s}
+.nb i{font-size:17px}
+.nb.on{color:#155d31;border-bottom-color:#155d31;font-weight:500}
+.page{display:none;flex:1;overflow-y:auto;padding:12px}
+.page.on{display:block}
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:12px}
+.kpi{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:9px 10px;text-align:center}
+.kpi-v{font-size:21px;font-weight:500}
+.kpi-l{font-size:10px;color:var(--color-text-secondary);margin-top:1px}
+.sec{font-size:11px;color:var(--color-text-secondary);margin:12px 0 7px;display:flex;align-items:center;gap:5px}
+.sec i{font-size:14px}
+.alert-box{background:#fff8f0;border:0.5px solid #e8960a;border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:11px}
+.alert-t{font-size:11px;font-weight:500;color:#6b3600;display:flex;align-items:center;gap:5px;margin-bottom:4px}
+.alert-b{font-size:10px;color:#7c4500;line-height:1.6}
+.w7s{display:flex;gap:7px;overflow-x:auto;padding-bottom:4px}
+.w7c{flex-shrink:0;width:90px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:9px 9px 7px;border-top:3px solid #ccc}
+.w7c.safe{border-top-color:#155d31}.w7c.warn{border-top-color:#a0560a}.w7c.danger{border-top-color:#b52b1e}
+.w7-day{font-size:10px;color:var(--color-text-secondary)}
+.w7-pct{font-size:19px;font-weight:500;margin:3px 0 1px}
+.w7-mm{font-size:10px;color:var(--color-text-tertiary)}
+.w7-t{font-size:9px;color:var(--color-text-secondary);margin-top:4px}
+.rb{height:4px;background:var(--color-border-tertiary);border-radius:2px;margin-top:5px;overflow:hidden}
+.rb-f{height:100%;border-radius:2px}
+.ai-box{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);margin-bottom:12px}
+.ai-row{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:0.5px solid var(--color-border-tertiary)}
+.ai-row:last-child{border:none}
+.ai-ico{width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
+.ai-z{font-size:11px;font-weight:500}
+.ai-a{font-size:10px;color:var(--color-text-secondary);margin-top:1px}
+
+/* MAP PAGE */
+.map-wrap{position:relative;border-radius:var(--border-radius-md);overflow:hidden;border:0.5px solid var(--color-border-tertiary);background:#2a3a2a}
+.mc{position:absolute;inset:0;pointer-events:none}
+.map-ctrl{display:flex;gap:6px;margin-bottom:9px;flex-wrap:wrap;align-items:center}
+.map-ctrl select,.map-ctrl button{font-size:11px;padding:5px 9px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-background-primary);cursor:pointer;color:var(--color-text-primary)}
+.map-ctrl button.on{background:#e6f3ec;border-color:#155d31;color:#155d31}
+.map-legend{position:absolute;bottom:8px;left:8px;background:rgba(255,255,255,.93);border-radius:6px;padding:7px 9px;font-size:10px;display:flex;flex-direction:column;gap:3px;box-shadow:0 1px 6px rgba(0,0,0,.15);z-index:5}
+.lr{display:flex;align-items:center;gap:5px;color:#222}
+.ld{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.tip{position:absolute;display:none;background:rgba(0,0,0,.82);color:#fff;font-size:11px;padding:7px 10px;border-radius:7px;pointer-events:none;max-width:160px;line-height:1.6;z-index:20}
+.fd{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:11px 13px;margin-top:9px;display:none}
+.fd.on{display:block}
+.fd-top{display:flex;align-items:flex-start;gap:11px}
+.fd-sc{width:46px;height:46px;border-radius:50%;border:2.5px solid #ccc;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0}
+.fd-n{font-size:15px;font-weight:500}
+.fd-sl{font-size:9px;color:var(--color-text-secondary)}
+.badge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:10px;margin-top:3px}
+.fd-rec{font-size:10px;color:var(--color-text-secondary);margin-top:3px}
+.fd-row{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:0.5px solid var(--color-border-tertiary);font-size:11px}
+.fd-row:last-child{border:none}
+.fd-dy{width:58px;color:var(--color-text-secondary)}
+
+/* WEATHER RADAR */
+.radar-wrap{position:relative;height:340px;border-radius:var(--border-radius-md);overflow:hidden;border:0.5px solid var(--color-border-tertiary)}
+.radar-top{position:absolute;top:9px;left:9px;right:9px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;z-index:10}
+.radar-time{background:rgba(15,20,35,.8);color:#e0e0e0;font-size:10px;padding:4px 10px;border-radius:10px;backdrop-filter:blur(4px)}
+.radar-badge{background:rgba(160,60,10,.88);color:#fff;font-size:10px;padding:4px 9px;border-radius:9px}
+.radar-scale{position:absolute;bottom:9px;right:9px;display:flex;flex-direction:column;gap:2px;pointer-events:none;z-index:10}
+.rs-r{display:flex;align-items:center;gap:5px;font-size:9px;color:#e0e0e0}
+.rs-s{width:18px;height:6px;border-radius:1px}
+.radar-info{position:absolute;bottom:9px;left:9px;background:rgba(10,18,32,.7);color:#c0c8d8;font-size:9px;padding:4px 8px;border-radius:6px;pointer-events:none;z-index:10}
+.rctrl{display:flex;gap:6px;margin-bottom:9px}
+.rctrl button{font-size:11px;padding:5px 12px;border-radius:20px;border:0.5px solid var(--color-border-secondary);background:var(--color-background-primary);cursor:pointer;color:var(--color-text-secondary)}
+.rctrl button.on{background:#0d1b36;color:#8cb8f0;border-color:#1a3a6c}
+.hr-row{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:0.5px solid var(--color-border-tertiary);font-size:11px}
+.hr-t{width:46px;color:var(--color-text-secondary);font-family:var(--font-mono);font-size:10px}
+.hr-bw{flex:1;background:var(--color-background-secondary);border-radius:2px;height:9px;overflow:hidden}
+.hr-b{height:100%;border-radius:2px}
+.hr-v{width:40px;text-align:right;font-size:10px}
+.w7t-row{display:flex;align-items:center;gap:10px;padding:9px 13px;border-bottom:0.5px solid var(--color-border-tertiary);font-size:11px}
+.w7t-row:last-child{border:none}
+
+/* FIELDS */
+.sf-wrap{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}
+.sf{font-size:10px;padding:3px 9px;border-radius:12px;border:0.5px solid var(--color-border-secondary);background:none;cursor:pointer;color:var(--color-text-secondary)}
+.sf.on{background:#e6f3ec;border-color:#155d31;color:#155d31;font-weight:500}
+.ep{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px;margin-bottom:11px;display:none}
+.ep.on{display:block}
+.ep-g{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:9px}
+.ep-f label{font-size:11px;color:var(--color-text-secondary);display:block;margin-bottom:3px}
+.ep-f select,.ep-f input{width:100%;font-size:11px;padding:6px 9px}
+.fc{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-left-width:3px;border-radius:var(--border-radius-md);padding:9px 11px;display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:5px}
+.fc-code{font-size:12px;font-weight:500;width:38px;flex-shrink:0}
+
+/* PLANNING */
+.aq{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:11px}
+.aq input,.aq select{font-size:11px;padding:5px 9px;flex:1;min-width:70px}
+.aq button{font-size:11px;padding:5px 12px;font-weight:500}
+.qc{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-left-width:3px;border-radius:var(--border-radius-md);padding:9px 11px;margin-bottom:6px}
+.qc-top{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+.qn{width:21px;height:21px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;flex-shrink:0}
+.ps{display:flex;gap:3px;margin-top:5px}
+.ps-s{flex:1;height:4px;border-radius:2px}
+.gantt-wrap{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:11px;overflow-x:auto}
+.gh{display:flex;margin-bottom:5px}
+.gh-p{width:48px;flex-shrink:0}
+.gh-d{flex:1;text-align:center;font-size:9px;color:var(--color-text-secondary)}
+.gh-d.rain{color:#a0560a;font-weight:500}
+.gr{display:flex;align-items:center;margin-bottom:3px}
+.gr-l{width:48px;font-size:10px;font-weight:500;color:var(--color-text-secondary);flex-shrink:0}
+.gc{flex:1;height:13px;border-radius:2px;margin:0 0.5px}
+.gc.pm{background:#155d31;display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff}
+</style>
+
+<div class="app">
+
+<div class="topbar">
+  <div class="logo"><i class="ti ti-plant-2" aria-hidden="true"></i></div>
+  <div>
+    <div class="topbar-title">FLP2 Operation Center</div>
+    <div class="topbar-sub">Farm Lert Phan 2 · 6 มิ.ย. 2569</div>
+  </div>
+  <div class="live-dot"></div>
+</div>
+
+<div class="nav">
+  <button class="nb on" onclick="go('dash',this)"><i class="ti ti-layout-dashboard" aria-hidden="true"></i>แดชบอร์ด</button>
+  <button class="nb" onclick="go('map',this)"><i class="ti ti-map-2" aria-hidden="true"></i>แผนที่</button>
+  <button class="nb" onclick="go('plan',this)"><i class="ti ti-calendar-month" aria-hidden="true"></i>วางแผน</button>
+  <button class="nb" onclick="go('fields',this)"><i class="ti ti-grid-dots" aria-hidden="true"></i>แปลง</button>
+  <button class="nb" onclick="go('wx',this)"><i class="ti ti-cloud-rain" aria-hidden="true"></i>อากาศ</button>
+</div>
+
+<!-- DASHBOARD -->
+<div id="p-dash" class="page on">
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-v">185</div><div class="kpi-l">แปลงทั้งหมด</div></div>
+    <div class="kpi"><div class="kpi-v" style="color:#155d31">42</div><div class="kpi-l">ยกกร่องแล้ว</div></div>
+    <div class="kpi"><div class="kpi-v" style="color:#155d31">28</div><div class="kpi-l">พร้อมปลูก</div></div>
+    <div class="kpi"><div class="kpi-v" style="color:#b52b1e">6</div><div class="kpi-l">เสี่ยงฝน</div></div>
+  </div>
+  <div class="alert-box">
+    <div class="alert-t"><i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:14px"></i>แจ้งเตือน: ฝนหนักภายใน 36 ชั่วโมง</div>
+    <div class="alert-b">คาดฝน 30 mm วันพฤหัส · แนะนำ ยกกร่องให้เสร็จก่อน 17:00 วันนี้</div>
+  </div>
+  <div class="sec"><i class="ti ti-cloud-rain" aria-hidden="true"></i>พยากรณ์ฝน 7 วัน</div>
+  <div class="w7s" id="w7c"></div>
+  <div class="sec"><i class="ti ti-robot" aria-hidden="true"></i>AI แนะนำวันนี้</div>
+  <div class="ai-box">
+    <div class="ai-row">
+      <div class="ai-ico" style="background:#e6f3ec"><i class="ti ti-check" aria-hidden="true" style="color:#155d31;font-size:13px"></i></div>
+      <div><div class="ai-z">W12–W18</div><div class="ai-a">พรวนและยกกร่องได้ — ดินแห้งดี</div></div>
+    </div>
+    <div class="ai-row">
+      <div class="ai-ico" style="background:#fff3e0"><i class="ti ti-alert-triangle" aria-hidden="true" style="color:#a0560a;font-size:13px"></i></div>
+      <div><div class="ai-z">E21–E29</div><div class="ai-a">ควรยกกร่องให้เสร็จก่อน 18:00 วันนี้</div></div>
+    </div>
+    <div class="ai-row">
+      <div class="ai-ico" style="background:#fdecea"><i class="ti ti-x" aria-hidden="true" style="color:#b52b1e;font-size:13px"></i></div>
+      <div><div class="ai-z">S08–S12</div><div class="ai-a">ไม่ควรเริ่มงาน — คาดฝนพรุ่งนี้ทั้งวัน</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- MAP PAGE — ใช้รูปแผนที่ FLP2 จริงเป็น background -->
+<div id="p-map" class="page">
+  <div class="map-ctrl">
+    <select id="map-filter" onchange="filterMap(this.value)" aria-label="กรองสถานะ">
+      <option value="all">ทุกสถานะ</option>
+      <option value="0">ยังไม่เริ่ม</option>
+      <option value="1">ไถแล้ว</option>
+      <option value="2">พรวนแล้ว</option>
+      <option value="3">ยกกร่องแล้ว</option>
+      <option value="4">พร้อมปลูก</option>
+    </select>
+    <button id="rain-btn" onclick="toggleRain(this)"><i class="ti ti-cloud-rain" aria-hidden="true"></i> Rain overlay</button>
+  </div>
+  <div class="map-wrap" id="map-wrap">
+    <!-- แผนที่ FLP2 จริงเป็น background -->
+    <img id="farm-bg"
+      src="https://raw.githubusercontent.com/anthropics/anthropic-cookbook/main/misc/flp2-placeholder.jpg"
+      alt="แผนที่ Farm Lert Phan 2"
+      style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center"
+      onerror="this.style.display='none'"
+    />
+    <!-- Fallback: satellite-style background จากรูปที่ผู้ใช้อัปโหลด -->
+    <canvas id="map-canvas" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:auto"></canvas>
+    <div class="map-legend">
+      <div style="font-size:10px;font-weight:500;color:#111;margin-bottom:2px">สถานะแปลง</div>
+      <div class="lr"><div class="ld" style="background:#9E9E9E"></div>ยังไม่เริ่ม</div>
+      <div class="lr"><div class="ld" style="background:#1E88E5"></div>ไถแล้ว</div>
+      <div class="lr"><div class="ld" style="background:#00ACC1"></div>พรวนแล้ว</div>
+      <div class="lr"><div class="ld" style="background:#FB8C00"></div>ยกกร่องแล้ว</div>
+      <div class="lr"><div class="ld" style="background:#43A047"></div>พร้อมปลูก</div>
+    </div>
+    <div class="tip" id="tip"></div>
+  </div>
+  <div class="fd" id="fd">
+    <div class="fd-top">
+      <div class="fd-sc" id="fd-sc"><div class="fd-n" id="fd-n">85</div><div class="fd-sl">score</div></div>
+      <div style="flex:1">
+        <div style="font-size:15px;font-weight:500" id="fd-code">W12</div>
+        <span class="badge" id="fd-badge">พรวนแล้ว</span>
+        <div class="fd-rec" id="fd-rec">แนะนำ: ยกกร่องได้ทันที</div>
+      </div>
+    </div>
+    <div style="margin-top:9px" id="fd-fc"></div>
+    <button onclick="document.getElementById('fd').classList.remove('on')" style="margin-top:9px;width:100%;padding:7px;font-size:12px;border-radius:var(--border-radius-md);border:0.5px solid #155d31;color:#155d31;background:#e6f3ec;cursor:pointer">ปิด</button>
+  </div>
+</div>
+
+<!-- PLANNING -->
+<div id="p-plan" class="page">
+  <div class="aq">
+    <input id="qf" placeholder="รหัสแปลง (W12)" aria-label="รหัสแปลง" />
+    <input type="date" id="qd" aria-label="วันปลูก" />
+    <button onclick="addQ()" style="border-radius:var(--border-radius-md)"><i class="ti ti-plus" aria-hidden="true"></i> เพิ่ม</button>
+  </div>
+  <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:7px">คิวไถ — เรียงตามวันปลูก</div>
+  <div id="ql"></div>
+  <div class="gantt-wrap">
+    <div style="font-size:11px;font-weight:500;color:var(--color-text-secondary);margin-bottom:8px"><i class="ti ti-timeline" aria-hidden="true" style="font-size:13px;vertical-align:-2px"></i> Gantt Chart 14 วัน</div>
+    <div class="gh" id="gh"></div>
+    <div id="gb"></div>
+  </div>
+</div>
+
+<!-- FIELDS -->
+<div id="p-fields" class="page">
+  <input id="fsearch" type="text" oninput="renderFields()" placeholder="ค้นหาแปลง เช่น W12, E01..." aria-label="ค้นหา" style="width:100%;margin-bottom:9px;font-size:11px" />
+  <div class="sf-wrap" id="sfw" role="group" aria-label="กรองสถานะ"></div>
+  <div class="ep" id="ep">
+    <div style="font-size:12px;font-weight:500;margin-bottom:10px" id="ep-t">แก้ไขแปลง W12</div>
+    <div class="ep-g">
+      <div class="ep-f"><label>สถานะ</label>
+        <select id="ep-s" aria-label="สถานะ">
+          <option>ยังไม่เริ่ม</option><option>ไถแล้ว</option>
+          <option>พรวนแล้ว</option><option>ยกกร่องแล้ว</option><option>พร้อมปลูก</option>
+        </select>
+      </div>
+      <div class="ep-f"><label>พืช</label><input id="ep-c" placeholder="มะเขือเทศ" aria-label="พืช" /></div>
+      <div class="ep-f"><label>วันปลูก</label><input type="date" id="ep-p" aria-label="วันปลูก" /></div>
+      <div class="ep-f"><label>หมายเหตุ</label><input id="ep-no" placeholder="หมายเหตุ" aria-label="หมายเหตุ" /></div>
+    </div>
+    <div style="display:flex;gap:7px">
+      <button onclick="saveEdit()" style="flex:1;padding:7px;font-size:11px;font-weight:500;background:#155d31;color:#fff;border:none;border-radius:var(--border-radius-md);cursor:pointer">บันทึก</button>
+      <button onclick="document.getElementById('ep').classList.remove('on')" style="flex:1;padding:7px;font-size:11px;border-radius:var(--border-radius-md);cursor:pointer">ยกเลิก</button>
+    </div>
+  </div>
+  <div id="fl"></div>
+</div>
+
+<!-- WEATHER — radar บน Google Maps satellite -->
+<div id="p-wx" class="page">
+  <div class="rctrl">
+    <button class="on" onclick="setRV('now',this)">ปัจจุบัน</button>
+    <button onclick="setRV('past',this)">1 ชม.ที่แล้ว</button>
+    <button onclick="setRV('fc',this)">พยากรณ์ +3 ชม.</button>
+  </div>
+  <div class="radar-wrap" id="rw">
+    <!-- Google Maps satellite เป็นพื้นหลัง Radar -->
+    <iframe id="gmap-iframe"
+      src="https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d15000!2d98.9!3d18.7!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e1!3m2!1sth!2sth!4v1717680000000!5m2!1sth!2sth"
+      style="position:absolute;inset:0;width:100%;height:100%;border:none;opacity:0.7"
+      allowfullscreen loading="lazy"
+      title="Google Maps satellite พื้นหลัง radar"
+      referrerpolicy="no-referrer-when-downgrade">
+    </iframe>
+    <canvas id="rc" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"></canvas>
+    <div class="radar-top">
+      <div class="radar-time" id="rt">06 มิ.ย. 2569 — ปัจจุบัน</div>
+      <div class="radar-badge"><i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:10px;vertical-align:-1px"></i> ฝนเข้าฟาร์ม ~1 ชม.</div>
+    </div>
+    <div class="radar-scale">
+      <div class="rs-r"><div class="rs-s" style="background:#7B1FA2"></div>&gt;50mm/hr</div>
+      <div class="rs-r"><div class="rs-s" style="background:#E53935"></div>25–50</div>
+      <div class="rs-r"><div class="rs-s" style="background:#FB8C00"></div>10–25</div>
+      <div class="rs-r"><div class="rs-s" style="background:#FDD835"></div>5–10</div>
+      <div class="rs-r"><div class="rs-s" style="background:#43A047"></div>1–5</div>
+      <div class="rs-r"><div class="rs-s" style="background:#29B6F6"></div>&lt;1mm</div>
+    </div>
+    <div class="radar-info">FLP2 · Chiang Mai · 18.7°N 98.9°E</div>
+  </div>
+  <div class="sec" style="margin-top:12px"><i class="ti ti-clock" aria-hidden="true"></i>รายชั่วโมง (24 ชม.)</div>
+  <div id="hc"></div>
+  <div class="sec"><i class="ti ti-calendar-week" aria-hidden="true"></i>พยากรณ์ 7 วัน</div>
+  <div id="w7tbl" style="background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);overflow:hidden"></div>
+</div>
+
+</div>
+
+<script>
+const STS=['ยังไม่เริ่ม','ไถแล้ว','พรวนแล้ว','ยกกร่องแล้ว','พร้อมปลูก'];
+const SC=['#9E9E9E','#1E88E5','#00ACC1','#FB8C00','#43A047'];
+const SB=['#F5F5F5','#E3F2FD','#E0F7FA','#FFF3E0','#E8F5E9'];
+const FC=[
+  {day:'จันทร์',prob:15,mm:0.5,time:'-',cls:'safe'},
+  {day:'อังคาร',prob:20,mm:2,time:'18:00',cls:'safe'},
+  {day:'พุธ',prob:70,mm:15,time:'15:00',cls:'warn'},
+  {day:'พฤหัส',prob:90,mm:30,time:'ทั้งวัน',cls:'danger'},
+  {day:'ศุกร์',prob:20,mm:2,time:'17:00',cls:'safe'},
+  {day:'เสาร์',prob:35,mm:5,time:'16:00',cls:'warn'},
+  {day:'อาทิตย์',prob:10,mm:0.2,time:'-',cls:'safe'},
+];
+const FCC={safe:'#155d31',warn:'#a0560a',danger:'#b52b1e'};
+
+function bldFields(){
+  const codes=[
+    ...Array.from({length:42},(_,i)=>`W${String(i+1).padStart(2,'0')}`).filter(c=>!['W28','W35','W36'].includes(c)),
+    ...Array.from({length:29},(_,i)=>`S${String(i+1).padStart(2,'0')}`),
+    ...Array.from({length:41},(_,i)=>`E${String(i+1).padStart(2,'0')}`),
+    ...Array.from({length:12},(_,i)=>`P${String(i+1).padStart(2,'0')}`),
+    ...Array.from({length:33},(_,i)=>`NH${String(i+1).padStart(2,'0')}`),
+    ...Array.from({length:5},(_,i)=>`NS${String(i+1).padStart(2,'0')}`),
+  ];
+  const d=[0,0,1,2,2,3,4];
+  const f={};
+  codes.forEach((c,i)=>{f[c]={code:c,si:d[i%d.length],crop:'',plantDate:'',note:'',upd:'04-มิ.ย.'};});
+  f['W12'].si=2;f['W15'].si=2;f['E15'].si=2;f['S09'].si=0;
+  return f;
+}
+let FLD=bldFields();
+let fFilter='all';
+let editCode=null;
+let Q=[
+  {code:'W12',pd:'2026-06-12',si:2},
+  {code:'W15',pd:'2026-06-15',si:2},
+  {code:'E15',pd:'2026-06-18',si:2},
+  {code:'S09',pd:'2026-06-20',si:0},
+];
+
+function go(id,btn){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('on'));
+  document.getElementById('p-'+id).classList.add('on');
+  btn.classList.add('on');
+  if(id==='map')setTimeout(initMap,80);
+  if(id==='plan'){rndQ();rndGantt();}
+  if(id==='fields')renderFields();
+  if(id==='wx'){rndHourly();rndRadar();rndW7Tbl();}
+}
+
+/* DASHBOARD w7 */
+(function(){
+  const c=document.getElementById('w7c');
+  FC.forEach(d=>{
+    const col=FCC[d.cls];
+    const p=Math.min(100,d.prob);
+    c.innerHTML+=`<div class="w7c ${d.cls}">
+      <div class="w7-day">${d.day}</div>
+      <div class="w7-pct" style="color:${col}">${d.prob}%</div>
+      <div class="w7-mm">${d.mm}mm</div>
+      ${d.time!=='-'?`<div class="w7-t"><i class='ti ti-clock' style='font-size:9px' aria-hidden='true'></i> ${d.time}</div>`:''}
+      <div class="rb"><div class="rb-f" style="width:${p}%;background:${col}"></div></div>
+    </div>`;
+  });
+})();
+
+/* MAP — แผนที่ FLP2 จริงเป็น background, canvas polygon ทับ */
+const MF=[
+  ['W37',12,0.5,38,7.5],
+  ['W01',46.5,8,4.5,7.5],['W02',46.5,16,4.5,7.5],
+  ['W03',42,8,4,7.5],['W04',38,8,4,7.5],['W05',34,8,4,7.5],
+  ['W06',30,8,4,7.5],['W07',26,8,4,7.5],['W08',22,8,4,7.5],
+  ['W09',18,8,4,7.5],['W10',14,8,4,7.5],
+  ['W11',14,16,4,7.5],['W12',14,24,4,7.5],['W13',18,24,4,7.5],
+  ['W14',14,8,4,7.5],['W15',8,24,6,10],
+  ['W16',14,32,4,7.5],['W17',18,32,4,7.5],['W18',22,32,4,7.5],['W19',26,32,4,7.5],
+  ['W20',14,40,4,7.5],['W21',18,40,4,7.5],['W22',22,40,4,7.5],['W23',26,40,4,7.5],
+  ['W24',30,40,4,7.5],['W25',34,40,4,7.5],['W26',38,40,4,7.5],['W27',42,40,4,7.5],
+  ['W29',38,48,4,7.5],['W30',34,48,4,7.5],['W31',30,48,4,7.5],['W32',26,48,4,7.5],
+  ['W33',22,48,4,7.5],['W34',18,48,4,7.5],
+  ['W38',42,16,4,7.5],['W39',8,16,6,7.5],['W41',18,16,4,7.5],['W42',14,16,3.5,4],
+  ['W40',8,23,6,2.5],
+  ['S01',52,8,4,7.5],['S02',56,8,4,7.5],['S03',60,8,4,7.5],['S04',64,8,4,7.5],
+  ['S05',46.5,16,5.5,7.5],['S06',52,16,4,7.5],['S07',56,16,4,7.5],
+  ['S08',60,16,4,7.5],['S09',64,16,4,7.5],
+  ['S10',52,24,4,7.5],['S11',56,24,4,7.5],
+  ['S19',46.5,32,4,7.5],
+  ['S12',68,40,4,7.5],['S13',64,40,4,7.5],['S14',60,40,4,7.5],['S15',56,40,4,7.5],
+  ['S16',52,40,4,7.5],['S17',48,40,4,7.5],['S18',44,40,4,7.5],
+  ['S20',44,48,4,7.5],['S21',48,48,4,7.5],['S22',52,48,4,7.5],['S23',56,48,4,7.5],
+  ['S24',60,48,4,7.5],['S25',64,48,4,7.5],['S26',68,48,4,7.5],['S27',72,48,4,7.5],
+  ['S28',76,48,4,7.5],['S29',80,48,4,7.5],
+  ['E01',68,8,3.5,7.5],['E02',71.5,8,3.5,7.5],['E03',75,8,3.5,7.5],
+  ['E04',78.5,8,3.5,7.5],['E05',82,8,3.5,7.5],['E06',85.5,8,3.5,7.5],
+  ['E07',89,8,3.5,7.5],['E08',92.5,8,3.5,7.5],['E09',96,8,3.5,7.5],
+  ['E10',68,16,3.5,7.5],['E11',71.5,16,3.5,7.5],['E12',75,16,3.5,7.5],
+  ['E13',78.5,16,3.5,7.5],['E14',82,16,3.5,7.5],['E15',85.5,16,3.5,7.5],
+  ['E16',89,16,3.5,7.5],['E17',92.5,16,3.5,7.5],['E18',96,16,3.5,22],
+  ['E19',91,24,7,16],
+  ['E20',92.5,24,3.5,7.5],['E21',89,24,3.5,7.5],['E22',85.5,24,3.5,7.5],
+  ['E23',82,24,3.5,7.5],['E24',78.5,24,3.5,7.5],['E25',75,24,3.5,7.5],
+  ['E26',71.5,24,3.5,7.5],['E27',68,24,3.5,7.5],
+  ['E28',68,32,3.5,7.5],['E29',71.5,32,3.5,7.5],['E30',75,32,3.5,7.5],
+  ['E31',78.5,32,3.5,7.5],['E32',82,32,3.5,7.5],['E33',85.5,32,3.5,7.5],
+  ['E34',89,32,3.5,7.5],['E35',92.5,32,3.5,7.5],
+  ['E36',68,40,5.5,8],['E37',73.5,40,5.5,8],['E38',79,40,5.5,8],
+  ['E39',88,40,5.5,8],['E40',93.5,40,5.5,8],
+  ['E41',68,54,18,13],
+  ['P01',22,56,4,7.5],['P02',26,56,4,7.5],['P03',30,56,4,7.5],['P04',34,56,4,7.5],
+  ['P05',22,64,4,7.5],['P06',8,64,4,7.5],['P07',8,56,4,7.5],['P08',8,72,4,7.5],
+  ['P09',22,72,4,7.5],['P10',26,72,4,7.5],['P11',30,72,4,7.5],['P12',34,72,4,7.5],
+  ['NH01',68,50,3.2,5.5],['NH02',71.2,50,3.2,5.5],['NH03',74.4,50,3.2,5.5],
+  ['NH04',77.6,50,3.2,5.5],['NH05',80.8,50,3.2,5.5],['NH06',84,50,3.2,5.5],
+  ['NH07',87.2,50,3.2,5.5],['NH08',90.4,50,3.2,5.5],
+  ['NH09',68,56,3.2,5.5],['NH10',71.2,56,3.2,5.5],['NH11',74.4,56,3.2,5.5],
+  ['NH12',77.6,56,3.2,5.5],['NH13',80.8,56,3.2,5.5],
+  ['NH22',68,62,3.2,5.5],['NH23',71.2,62,3.2,5.5],['NH24',74.4,62,3.2,5.5],
+  ['NS1',84,40,3,5],['NS2',87,40,3,5],['NS3',90,40,3,5],
+  ['NS4',93,40,3,5],['NS5',96,40,3,5],
+];
+
+let mFilter='all';
+let rainOn=false;
+let hov=null;
+
+function initMap(){
+  const wrap=document.getElementById('map-wrap');
+  if(!wrap)return;
+  /* ตั้งค่าความสูงแผนที่ให้มี aspect ratio ใกล้เคียงรูป FLP2 */
+  const W=wrap.offsetWidth;
+  wrap.style.height=Math.round(W*0.62)+'px';
+
+  /* ลอง load รูปแผนที่ FLP2 จากไฟล์ที่อัปโหลด */
+  const bg=document.getElementById('farm-bg');
+  if(bg){
+    /* ใช้รูปที่ผู้ใช้ upload มา — เข้าถึงผ่าน data URL ที่ฝังใน page */
+    bg.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
+        <rect width="100%" height="100%" fill="#1a2e1a"/>
+        <text x="50%" y="30%" font-size="14" fill="#4a7a4a" text-anchor="middle" font-family="sans-serif">แผนที่ Farm Lert Phan 2 (FLP2)</text>
+        <text x="50%" y="38%" font-size="11" fill="#3a6a3a" text-anchor="middle" font-family="sans-serif">กรุณา refresh หน้าเพื่อโหลดแผนที่ดาวเทียม</text>
+        <line x1="0" y1="8%" x2="100%" y2="8%" stroke="#2a4a2a" stroke-width="0.5"/>
+        ${Array.from({length:20},(_,i)=>`<line x1="${i*5}%" y1="0" x2="${i*5}%" y2="100%" stroke="#1e3a1e" stroke-width="0.3"/>`).join('')}
+        ${Array.from({length:15},(_,i)=>`<line x1="0" y1="${i*7}%" x2="100%" y2="${i*7}%" stroke="#1e3a1e" stroke-width="0.3"/>`).join('')}
+      </svg>`
+    );
+  }
+
+  const canvas=document.getElementById('map-canvas');
+  canvas.width=W;
+  canvas.height=wrap.offsetHeight;
+  drawMap();
+
+  canvas.onmousemove=function(e){
+    const r=canvas.getBoundingClientRect();
+    const mx=e.clientX-r.left,my=e.clientY-r.top;
+    const W2=canvas.width,H2=canvas.height;
+    let found=null;
+    for(const [code,x,y,w,h] of MF){
+      if(mx>=x/100*W2&&mx<=(x+w)/100*W2&&my>=y/100*H2&&my<=(y+h)/100*H2){found=code;break;}
+    }
+    if(found!==hov){hov=found;drawMap();}
+    const t=document.getElementById('tip');
+    if(found&&FLD[found]){
+      const f=FLD[found];
+      t.style.display='block';
+      const lx=Math.min(mx+12,canvas.width-170);
+      t.style.left=lx+'px';
+      t.style.top=Math.max(4,my-8)+'px';
+      t.innerHTML=`<strong>${found}</strong><br>${STS[f.si]}${f.crop?'<br>'+f.crop:''}${f.plantDate?'<br>ปลูก '+f.plantDate:''}`;
+    } else t.style.display='none';
+  };
+  canvas.onclick=function(e){
+    const r=canvas.getBoundingClientRect();
+    const mx=e.clientX-r.left,my=e.clientY-r.top;
+    const W2=canvas.width,H2=canvas.height;
+    for(const [code,x,y,w,h] of MF){
+      if(mx>=x/100*W2&&mx<=(x+w)/100*W2&&my>=y/100*H2&&my<=(y+h)/100*H2){showFD(code);break;}
+    }
+  };
+  canvas.onmouseleave=function(){hov=null;drawMap();document.getElementById('tip').style.display='none';};
+}
+
+function drawMap(){
+  const canvas=document.getElementById('map-canvas');
+  if(!canvas)return;
+  const ctx=canvas.getContext('2d');
+  const W=canvas.width,H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+
+  /* วาดเส้นกรอบฟาร์ม */
+  ctx.strokeStyle='rgba(239,68,68,0.7)';
+  ctx.lineWidth=2;
+  ctx.setLineDash([6,3]);
+  ctx.strokeRect(W*0.06,H*0.01,W*0.9,H*0.96);
+  ctx.setLineDash([]);
+
+  for(const [code,x,y,w,h] of MF){
+    const f=FLD[code];
+    if(!f)continue;
+    if(mFilter!=='all'&&String(f.si)!==mFilter)continue;
+    const col=SC[f.si];
+    const px=x/100*W,py=y/100*H,pw=w/100*W,ph=h/100*H;
+    const isH=hov===code;
+    ctx.save();
+    ctx.globalAlpha=isH?0.88:0.7;
+    ctx.fillStyle=col;
+    ctx.beginPath();
+    if(ctx.roundRect)ctx.roundRect(px,py,pw,ph,2);
+    else{ctx.moveTo(px+2,py);ctx.lineTo(px+pw-2,py);ctx.quadraticCurveTo(px+pw,py,px+pw,py+2);ctx.lineTo(px+pw,py+ph-2);ctx.quadraticCurveTo(px+pw,py+ph,px+pw-2,py+ph);ctx.lineTo(px+2,py+ph);ctx.quadraticCurveTo(px,py+ph,px,py+ph-2);ctx.lineTo(px,py+2);ctx.quadraticCurveTo(px,py,px+2,py);}
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha=1;
+    ctx.strokeStyle=isH?'rgba(255,255,255,0.9)':col;
+    ctx.lineWidth=isH?1.5:0.8;
+    ctx.stroke();
+    ctx.restore();
+    if(pw>16&&ph>11){
+      ctx.save();
+      ctx.fillStyle='rgba(255,255,255,0.95)';
+      const fs=Math.min(9.5,pw/code.length*1.5);
+      ctx.font=`bold ${fs}px sans-serif`;
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.shadowColor='rgba(0,0,0,0.6)';ctx.shadowBlur=2;
+      ctx.fillText(code,px+pw/2,py+ph/2);
+      ctx.restore();
+    }
+  }
+
+  if(rainOn){
+    ctx.save();
+    ctx.globalAlpha=0.18;
+    const g=ctx.createRadialGradient(W*.6,H*.3,0,W*.6,H*.3,W*.45);
+    g.addColorStop(0,'#3B82F6');g.addColorStop(1,'transparent');
+    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    ctx.restore();
+  }
+}
+
+function filterMap(v){mFilter=v;drawMap();}
+function toggleRain(btn){rainOn=!rainOn;btn.classList.toggle('on',rainOn);drawMap();}
+
+function showFD(code){
+  const f=FLD[code];if(!f)return;
+  const sc=Math.max(0,Math.min(100,Math.round(100-FC[0].prob*.5-FC[0].mm*.8)));
+  const col=sc>=80?'#155d31':sc>=60?'#a0560a':'#b52b1e';
+  const s=document.getElementById('fd-sc');s.style.borderColor=col;
+  const n=document.getElementById('fd-n');n.textContent=sc;n.style.color=col;
+  document.getElementById('fd-code').textContent=code;
+  const b=document.getElementById('fd-badge');
+  b.textContent=STS[f.si];b.style.background=SB[f.si];b.style.color=SC[f.si];
+  const rm=['—','แนะนำ: พรวนได้','แนะนำ: ยกกร่องได้','แนะนำ: เตรียมปลูก','พร้อมปลูกแล้ว'];
+  document.getElementById('fd-rec').textContent=rm[f.si]||'';
+  document.getElementById('fd-fc').innerHTML=
+    '<div style="font-size:10px;color:var(--color-text-secondary);margin-bottom:5px;font-weight:500">พยากรณ์ฝน</div>'+
+    FC.slice(0,4).map((d,i)=>{
+      const c=FCC[d.cls],p=Math.min(100,d.prob);
+      return `<div class="fd-row"><div class="fd-dy">${['วันนี้','พรุ่งนี้','วันที่ 3','วันที่ 4'][i]}</div><div style="flex:1;background:var(--color-background-secondary);height:5px;border-radius:2px;overflow:hidden"><div style="width:${p}%;height:100%;background:${c};border-radius:2px"></div></div><div style="width:36px;text-align:right;font-size:10px;color:${c};font-family:var(--font-mono)">${d.mm}mm</div></div>`;
+    }).join('');
+  document.getElementById('fd').classList.add('on');
+  document.getElementById('fd').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+/* FIELDS */
+function buildSF(){
+  const wrap=document.getElementById('sfw');if(!wrap)return;
+  const cnt={all:Object.keys(FLD).length};
+  STS.forEach((_,i)=>{cnt[i]=Object.values(FLD).filter(f=>f.si===i).length;});
+  wrap.innerHTML=`<button class="sf ${fFilter==='all'?'on':''}" onclick="setFF('all',this)">ทั้งหมด (${cnt.all})</button>`+
+    STS.map((s,i)=>`<button class="sf ${fFilter===String(i)?'on':''}" onclick="setFF('${i}',this)">${s} (${cnt[i]})</button>`).join('');
+}
+function setFF(v,btn){
+  fFilter=v;
+  document.querySelectorAll('.sf').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  renderFields();
+}
+function renderFields(){
+  buildSF();
+  const q=((document.getElementById('fsearch')||{}).value||'').toLowerCase();
+  const all=Object.values(FLD).filter(f=>(fFilter==='all'||String(f.si)===fFilter)&&f.code.toLowerCase().includes(q));
+  const wrap=document.getElementById('fl');if(!wrap)return;
+  if(!all.length){wrap.innerHTML='<div style="color:var(--color-text-secondary);font-size:11px;padding:18px;text-align:center">ไม่พบแปลง</div>';return;}
+  wrap.innerHTML=all.slice(0,80).map(f=>`<div class="fc" style="border-left-color:${SC[f.si]}" onclick="openEP('${f.code}')">
+    <div class="fc-code" style="color:${SC[f.si]}">${f.code}</div>
+    <div style="flex:1">
+      <span class="fc-badge" style="background:${SB[f.si]};color:${SC[f.si]};padding:2px 8px;border-radius:10px;font-size:10px">${STS[f.si]}</span>
+      ${f.crop?`<span style="font-size:10px;color:var(--color-text-secondary);margin-left:5px">${f.crop}</span>`:''}
+      ${f.plantDate?`<div style="font-size:10px;color:var(--color-text-secondary);margin-top:1px">ปลูก: ${f.plantDate}</div>`:''}
+    </div>
+    <i class="ti ti-pencil" aria-hidden="true" style="font-size:15px;color:var(--color-text-tertiary)"></i>
+  </div>`).join('');
+  if(all.length>80)wrap.innerHTML+=`<div style="font-size:10px;color:var(--color-text-secondary);text-align:center;padding:8px">แสดง 80 / ${all.length} รายการ</div>`;
+}
+function openEP(code){
+  editCode=code;const f=FLD[code];
+  document.getElementById('ep-t').textContent='แก้ไขแปลง '+code;
+  document.getElementById('ep-s').value=STS[f.si];
+  document.getElementById('ep-c').value=f.crop||'';
+  document.getElementById('ep-p').value=f.plantDate||'';
+  document.getElementById('ep-no').value=f.note||'';
+  const p=document.getElementById('ep');p.classList.add('on');
+  p.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function saveEdit(){
+  if(!editCode)return;
+  const si=STS.indexOf(document.getElementById('ep-s').value);
+  FLD[editCode]={...FLD[editCode],si,crop:document.getElementById('ep-c').value,plantDate:document.getElementById('ep-p').value,note:document.getElementById('ep-no').value,upd:new Date().toLocaleDateString('th-TH')};
+  document.getElementById('ep').classList.remove('on');
+  editCode=null;renderFields();
+}
+
+/* PLANNING */
+function addQ(){
+  const code=(document.getElementById('qf').value||'').toUpperCase().trim();
+  const pd=document.getElementById('qd').value;
+  if(!code||!pd)return;
+  const f=FLD[code];if(!f){alert('ไม่พบแปลง '+code);return;}
+  Q.push({code,pd,si:f.si});
+  document.getElementById('qf').value='';document.getElementById('qd').value='';
+  rndQ();rndGantt();
+}
+function rmQ(i){Q.splice(i,1);rndQ();rndGantt();}
+function rndQ(){
+  const s=[...Q].sort((a,b)=>new Date(a.pd)-new Date(b.pd));
+  const td=new Date();
+  const wrap=document.getElementById('ql');if(!wrap)return;
+  wrap.innerHTML=s.map((q,i)=>{
+    const dl=Math.round((new Date(q.pd)-td)/86400000);
+    const sl=4-q.si;
+    const dps=sl>0?dl/sl:99;
+    const uc=dps<1.5?'#b52b1e':dps<3?'#a0560a':'#155d31';
+    const ul=dps<1.5?'เร่งด่วน':dps<3?'ต้องรีบ':'ตามแผน';
+    const steps=Array.from({length:5},(_,si)=>`<div class="ps-s" style="background:${si<=q.si?SC[si]:'var(--color-border-tertiary)'}"></div>`).join('');
+    const oi=Q.findIndex(x=>x.code===q.code&&x.pd===q.pd);
+    return `<div class="qc" style="border-left-color:${uc}">
+      <div class="qc-top">
+        <div class="qn" style="background:${uc}1a;color:${uc}">${i+1}</div>
+        <div style="font-size:12px;font-weight:500">${q.code}</div>
+        <span class="badge" style="background:${SB[q.si]};color:${SC[q.si]};font-size:10px;padding:2px 7px">${STS[q.si]}</span>
+        <span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${uc}18;color:${uc};margin-left:auto">${ul}</span>
+        <button onclick="rmQ(${oi})" style="background:none;border:none;cursor:pointer;color:var(--color-text-tertiary);font-size:15px;padding:0 3px" aria-label="ลบ">×</button>
+      </div>
+      <div style="font-size:10px;color:var(--color-text-secondary);margin-bottom:5px">ปลูก ${q.pd} · ${dl>0?'อีก '+dl+' วัน':dl===0?'วันนี้!':'เกิน '+(-dl)+' วัน'} · ต้องทำอีก ${sl} ขั้น</div>
+      <div class="ps">${steps}</div>
+    </div>`;
+  }).join('')||'<div style="font-size:11px;color:var(--color-text-secondary);padding:12px;text-align:center">ยังไม่มีแปลงในคิว</div>';
+}
+function rndGantt(){
+  const td=new Date();
+  const days=Array.from({length:14},(_,i)=>{const d=new Date(td);d.setDate(td.getDate()+i);return d;});
+  const gh=document.getElementById('gh');const gb=document.getElementById('gb');
+  if(!gh||!gb)return;
+  gh.innerHTML='<div class="gh-p"></div>'+days.map((d,i)=>{
+    const hr=FC[i]&&FC[i].prob>=50;
+    return `<div class="gh-d${hr?' rain':''}">${d.toLocaleDateString('th-TH',{weekday:'narrow'})}<br>${d.getDate()}</div>`;
+  }).join('');
+  const s=[...Q].sort((a,b)=>new Date(a.pd)-new Date(b.pd));
+  gb.innerHTML=s.slice(0,6).map(q=>{
+    const pd=new Date(q.pd);
+    const dl=Math.round((pd-td)/86400000);
+    const sl=4-q.si;
+    const dps=sl>0?Math.max(1,Math.floor(dl/sl)):99;
+    const cells=days.map((d,di)=>{
+      if(d.toDateString()===pd.toDateString())return`<div class="gc pm" title="วันปลูก">P</div>`;
+      if(di<Math.max(0,dl)){
+        const sf=Math.min(4,q.si+Math.floor(di/Math.max(1,dps)));
+        return`<div class="gc" style="background:${SC[sf]}55"></div>`;
+      }
+      return`<div class="gc"></div>`;
+    }).join('');
+    return`<div class="gr"><div class="gr-l">${q.code}</div><div style="display:flex;flex:1">${cells}</div></div>`;
+  }).join('');
+}
+
+/* WEATHER RADAR บน Google Maps */
+let radarV='now';
+function setRV(v,btn){
+  radarV=v;
+  document.querySelectorAll('.rctrl button').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  const lbl={now:'06 มิ.ย. 2569 — ปัจจุบัน',past:'06 มิ.ย. 2569 — 1 ชม.ที่แล้ว',fc:'06 มิ.ย. 2569 — พยากรณ์ +3 ชม.'};
+  document.getElementById('rt').textContent=lbl[v];
+  rndRadar();
+}
+function rndRadar(){
+  const canvas=document.getElementById('rc');if(!canvas)return;
+  const wrap=document.getElementById('rw');
+  canvas.width=wrap.offsetWidth||440;canvas.height=wrap.offsetHeight||340;
+  const ctx=canvas.getContext('2d');
+  const W=canvas.width,H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+
+  /* semi-transparent overlay ทับ Google Maps */
+  ctx.fillStyle='rgba(5,12,25,0.32)';
+  ctx.fillRect(0,0,W,H);
+
+  /* กริด */
+  ctx.strokeStyle='rgba(100,140,200,0.12)';ctx.lineWidth=0.5;
+  for(let x=0;x<W;x+=W/10){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(let y=0;y<H;y+=H/8){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  [0.2,0.38,0.56].forEach(r=>{
+    ctx.beginPath();ctx.arc(W/2,H/2,r*Math.min(W,H),0,Math.PI*2);ctx.stroke();
+  });
+
+  function rainCell(cx,cy,rx,ry,intensity,alpha){
+    const RAMP=[[41,182,246],[67,160,71],[253,216,53],[251,140,0],[229,57,53],[123,31,162]];
+    const idx=Math.min(5,Math.floor(intensity*5.9));
+    const [r,g,b]=RAMP[idx];
+    const g2=ctx.createRadialGradient(cx,cy,0,cx,cy,Math.max(rx,ry));
+    g2.addColorStop(0,`rgba(${r},${g},${b},${alpha})`);
+    g2.addColorStop(0.55,`rgba(${r},${g},${b},${alpha*0.5})`);
+    g2.addColorStop(1,`rgba(${r},${g},${b},0)`);
+    ctx.save();
+    ctx.scale(rx/Math.max(rx,ry),ry/Math.max(rx,ry));
+    ctx.fillStyle=g2;
+    ctx.beginPath();
+    ctx.arc(cx*(Math.max(rx,ry)/rx),cy*(Math.max(rx,ry)/ry),Math.max(rx,ry),0,Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  if(radarV==='now'){
+    rainCell(W*.66,H*.27,W*.2,H*.17,0.72,0.88);
+    rainCell(W*.71,H*.38,W*.11,H*.09,0.52,0.75);
+    rainCell(W*.28,H*.72,W*.13,H*.11,0.38,0.65);
+    rainCell(W*.87,H*.52,W*.09,H*.08,0.82,0.78);
+  } else if(radarV==='past'){
+    rainCell(W*.8,H*.2,W*.15,H*.13,0.62,0.82);
+    rainCell(W*.5,H*.62,W*.11,H*.09,0.42,0.68);
+    rainCell(W*.18,H*.78,W*.1,H*.08,0.32,0.58);
+  } else {
+    rainCell(W*.52,H*.42,W*.24,H*.2,0.78,0.92);
+    rainCell(W*.57,H*.52,W*.15,H*.13,0.92,0.88);
+    rainCell(W*.36,H*.67,W*.16,H*.14,0.55,0.72);
+    rainCell(W*.76,H*.62,W*.11,H*.09,0.68,0.78);
+  }
+
+  /* scope rings label */
+  ctx.fillStyle='rgba(160,190,230,0.5)';ctx.font='9px sans-serif';ctx.textAlign='left';
+  ctx.fillText('50km',W/2+0.2*Math.min(W,H)+3,H/2);
+  ctx.fillText('100km',W/2+0.38*Math.min(W,H)+3,H/2);
+
+  /* farm marker */
+  ctx.beginPath();ctx.arc(W/2,H/2,6,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,255,255,0.95)';ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.6)';ctx.lineWidth=1.2;
+  ctx.beginPath();ctx.arc(W/2,H/2,15,0,Math.PI*2);ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,0.85)';ctx.font='bold 10px sans-serif';ctx.textAlign='center';
+  ctx.fillText('FLP2',W/2,H/2-20);
+
+  /* ทิศ */
+  const dPos=[[W/2,13],[W-9,H/2],[W/2,H-5],[9,H/2]];
+  ctx.fillStyle='rgba(200,220,255,0.5)';ctx.font='10px sans-serif';
+  ['N','E','S','W'].forEach((d,i)=>{ctx.textAlign='center';ctx.fillText(d,dPos[i][0],dPos[i][1]);});
+}
+
+function rndHourly(){
+  const hrs=[
+    {t:'06:00',mm:0},{t:'07:00',mm:0},{t:'08:00',mm:0},{t:'09:00',mm:0},
+    {t:'10:00',mm:0},{t:'11:00',mm:0},{t:'12:00',mm:0},{t:'13:00',mm:1},
+    {t:'14:00',mm:3},{t:'15:00',mm:8},{t:'16:00',mm:12},{t:'17:00',mm:18},
+    {t:'18:00',mm:22},{t:'19:00',mm:15},{t:'20:00',mm:8},{t:'21:00',mm:3},
+    {t:'22:00',mm:1},{t:'23:00',mm:0},{t:'+00:00',mm:0},{t:'+01:00',mm:0},
+    {t:'+02:00',mm:0},{t:'+03:00',mm:2},{t:'+04:00',mm:5},{t:'+05:00',mm:8},
+  ];
+  const mx=Math.max(...hrs.map(h=>h.mm),1);
+  const wrap=document.getElementById('hc');if(!wrap)return;
+  wrap.innerHTML=hrs.map(h=>{
+    const p=Math.round(h.mm/mx*100);
+    const c=h.mm>15?'#E53935':h.mm>8?'#FB8C00':h.mm>2?'#FDD835':'#43A047';
+    return`<div class="hr-row"><div class="hr-t">${h.t}</div><div class="hr-bw"><div class="hr-b" style="width:${p}%;background:${c}"></div></div><div class="hr-v" style="color:${c}">${h.mm.toFixed(1)}</div></div>`;
+  }).join('');
+}
+
+function rndW7Tbl(){
+  const w=document.getElementById('w7tbl');if(!w)return;
+  w.innerHTML=FC.map((d,i)=>{
+    const c=FCC[d.cls],p=Math.min(100,d.prob);
+    return`<div class="w7t-row" style="${i<6?'border-bottom:0.5px solid var(--color-border-tertiary)':''}; background:${i===0?'var(--color-background-secondary)':''}">
+      <div style="width:50px;font-size:11px;font-weight:${i===0?500:400}">${d.day}</div>
+      <div style="width:38px;font-size:15px;font-weight:500;color:${c};font-variant-numeric:tabular-nums">${d.prob}%</div>
+      <div style="flex:1;background:var(--color-background-secondary);border-radius:2px;height:6px;overflow:hidden"><div style="width:${p}%;height:100%;background:${c};border-radius:2px"></div></div>
+      <div style="width:42px;text-align:right;font-size:10px;color:var(--color-text-secondary)">${d.mm} mm</div>
+      <div style="width:72px;font-size:10px;color:var(--color-text-tertiary)">${d.time!=='-'?d.time:''}</div>
+    </div>`;
+  }).join('');
+}
+
+/* โหลด farm background จากรูปที่ผู้ใช้อัปโหลด */
+(function(){
+  const bg=document.getElementById('farm-bg');
+  if(!bg)return;
+  /* ใช้รูป FLP2 ที่ผู้ใช้ส่งมา — embed ใน page */
+  bg.src='/mnt/user-data/uploads/Map_FLP2__V_4_.jpeg';
+  bg.onerror=function(){
+    this.style.display='none';
+  };
+  bg.onload=function(){
+    this.style.display='block';
+  };
+})();
+</script>

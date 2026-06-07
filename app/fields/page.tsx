@@ -1,302 +1,179 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { supabase, type Field, type FieldStatus, FIELD_STATUSES, STATUS_COLORS } from '@/lib/supabase';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Pencil, Trash2, Wheat, Search } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import { useEffect, useState, useMemo } from 'react';
+import { fetchCropPlans, getPlotStatus, fmtDateTh, type CropPlan } from '@/lib/farmData';
+
+const STS_LIST = ['ล่าช้า','รอปลูก','รอเตรียมดิน','วางแผน','ปลูกแล้ว','เสร็จสิ้น'];
+const STS_COLOR: Record<string,string> = {
+  'ล่าช้า':'#dc2626','รอปลูก':'#d97706','รอเตรียมดิน':'#0284c7','วางแผน':'#8b5cf6',
+  'ปลูกแล้ว':'#16a34a','เสร็จสิ้น':'#64748b',
+};
+const STS_BG: Record<string,string> = {
+  'ล่าช้า':'#fee2e2','รอปลูก':'#fef3c7','รอเตรียมดิน':'#e0f2fe','วางแผน':'#ede9fe',
+  'ปลูกแล้ว':'#dcfce7','เสร็จสิ้น':'#f1f5f9',
+};
+
+const YEARS = [2026,2025,2024,2023];
 
 export default function FieldsPage() {
-  const [fields, setFields] = useState<Field[]>([]);
+  const [all, setAll] = useState<CropPlan[]>([]);
   const [loading, setLoading] = useState(true);
+  const [year, setYear] = useState(2026);
   const [search, setSearch] = useState('');
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingField, setEditingField] = useState<Field | null>(null);
-  const [formData, setFormData] = useState({ field_code: '', area_m2: '', status: 'Not Started' as FieldStatus });
-  const { toast } = useToast();
+  const [stsFilter, setStsFilter] = useState('all');
+  const [cropFilter, setCropFilter] = useState('all');
+  const [editCode, setEditCode] = useState<string|null>(null);
+  const [showCount, setShowCount] = useState(80);
 
-  const loadFields = useCallback(async () => {
-    try {
-      const { data } = await supabase.from('fields').select('*').order('field_code');
-      if (data) setFields(data);
-    } catch {
-      // silently handle connection errors
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    fetchCropPlans().then(d => { setAll(d); setLoading(false); });
   }, []);
 
-  useEffect(() => { loadFields(); }, [loadFields]);
+  const yr = useMemo(() => all.filter(r => r.year === year), [all, year]);
 
-  function openCreate() {
-    setEditingField(null);
-    setFormData({ field_code: '', area_m2: '', status: 'Not Started' });
-    setDialogOpen(true);
-  }
+  const crops = useMemo(() => {
+    const s = new Set(yr.map(r => r.crop));
+    return ['all',...Array.from(s).sort()];
+  }, [yr]);
 
-  function openEdit(field: Field) {
-    setEditingField(field);
-    setFormData({
-      field_code: field.field_code,
-      area_m2: String(field.area_m2),
-      status: field.status,
+  // Count per status
+  const stsCounts = useMemo(() => {
+    const c: Record<string,number> = { all: yr.length };
+    yr.forEach(r => { const st = getPlotStatus(r).label; c[st] = (c[st]||0)+1; });
+    return c;
+  }, [yr]);
+
+  const filtered = useMemo(() => {
+    return yr.filter(r => {
+      const st = getPlotStatus(r).label;
+      if (stsFilter !== 'all' && st !== stsFilter) return false;
+      if (cropFilter !== 'all' && r.crop !== cropFilter) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        return r.cpNo.toLowerCase().includes(q)||r.plot.toLowerCase().includes(q)||r.crop.toLowerCase().includes(q);
+      }
+      return true;
+    }).sort((a,b) => {
+      const oa = STS_LIST.indexOf(getPlotStatus(a).label);
+      const ob = STS_LIST.indexOf(getPlotStatus(b).label);
+      if (oa !== ob) return oa - ob;
+      return (a.landPrep||a.transplantPlan||'9') < (b.landPrep||b.transplantPlan||'9') ? -1 : 1;
     });
-    setDialogOpen(true);
-  }
+  }, [yr, stsFilter, cropFilter, search]);
 
-  async function handleSave() {
-    if (!formData.field_code.trim() || !formData.area_m2) {
-      toast({ title: 'Validation Error', description: 'Field code and area are required.', variant: 'destructive' });
-      return;
-    }
+  const editItem = editCode ? all.find(r => r.cpNo === editCode) : null;
 
-    const payload = {
-      field_code: formData.field_code.trim(),
-      area_m2: parseFloat(formData.area_m2),
-      status: formData.status,
-    };
-
-    if (editingField) {
-      const { error } = await supabase.from('fields').update(payload).eq('id', editingField.id);
-      if (error) {
-        toast({ title: 'Error', description: error.message, variant: 'destructive' });
-        return;
-      }
-      toast({ title: 'Field Updated', description: `${payload.field_code} updated successfully.` });
-    } else {
-      const { error } = await supabase.from('fields').insert(payload);
-      if (error) {
-        toast({ title: 'Error', description: error.message, variant: 'destructive' });
-        return;
-      }
-      toast({ title: 'Field Created', description: `${payload.field_code} created successfully.` });
-    }
-
-    setDialogOpen(false);
-    loadFields();
-  }
-
-  async function handleDelete(id: string, code: string) {
-    const { error } = await supabase.from('fields').delete().eq('id', id);
-    if (error) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
-      return;
-    }
-    toast({ title: 'Field Deleted', description: `${code} has been removed.` });
-    loadFields();
-  }
-
-  async function updateStatus(field: Field, newStatus: FieldStatus) {
-    const { error } = await supabase.from('fields').update({ status: newStatus }).eq('id', field.id);
-    if (error) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
-      return;
-    }
-    toast({ title: 'Status Updated', description: `${field.field_code} is now ${newStatus}.` });
-    loadFields();
-  }
-
-  const filteredFields = fields.filter(f =>
-    f.field_code.toLowerCase().includes(search.toLowerCase())
+  if (loading) return (
+    <div className="p-4 animate-pulse space-y-3">
+      <div className="flex gap-2">{[...Array(6)].map((_,i)=><div key={i} className="h-7 w-20 bg-muted rounded-full"/>)}</div>
+      <div className="space-y-1.5">{[...Array(8)].map((_,i)=><div key={i} className="h-12 bg-muted rounded-lg"/>)}</div>
+    </div>
   );
 
-  const statusOrder: Record<FieldStatus, number> = {
-    'Not Started': 0,
-    'Plowing': 1,
-    'Harrowing': 2,
-    'Ridging': 3,
-    'Ready For Transplant': 4,
-  };
+  return (
+    <div className="p-3 lg:p-4 space-y-3">
 
-  if (loading) {
-    return (
-      <div className="p-8">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 w-48 bg-muted rounded" />
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="h-16 bg-muted rounded-lg" />
+      {/* Year + search */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <input type="text" placeholder="ค้นหา แปลง / CP / พืช…" value={search}
+          onChange={e=>{ setSearch(e.target.value); setShowCount(80); }}
+          className="h-7 px-2.5 rounded border border-border bg-card text-[11px] w-48 focus:outline-none focus:ring-1 focus:ring-[#155d31]"/>
+        <select value={cropFilter} onChange={e=>setCropFilter(e.target.value)}
+          className="h-7 px-2 rounded border border-border bg-card text-[11px] focus:outline-none">
+          {crops.map(c=><option key={c} value={c}>{c==='all'?'พืชทุกชนิด':c}</option>)}
+        </select>
+        <div className="flex gap-1 ml-auto">
+          {YEARS.map(y=>(
+            <button key={y} onClick={()=>{ setYear(y); setStsFilter('all'); setSearch(''); setShowCount(80); }}
+              className={['px-2.5 py-1 rounded text-[11px] font-medium border transition-colors',
+                y===year?'bg-[#155d31] text-white border-[#155d31]':'border-border text-muted-foreground hover:text-foreground'].join(' ')}>
+              {y}
+            </button>
           ))}
         </div>
       </div>
-    );
-  }
 
-  return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Field Management</h1>
-          <p className="text-muted-foreground text-sm mt-1">Manage your farm fields and their preparation status</p>
+      {/* Status filter chips */}
+      <div className="flex gap-1.5 flex-wrap">
+        <button onClick={()=>{ setStsFilter('all'); setShowCount(80); }}
+          className={['text-[10px] px-2.5 py-1 rounded-full border transition-colors',
+            stsFilter==='all'?'bg-[#e6f3ec] border-[#155d31] text-[#155d31] font-medium':'border-border text-muted-foreground'].join(' ')}>
+          ทั้งหมด ({stsCounts.all||0})
+        </button>
+        {STS_LIST.map(s => stsCounts[s] ? (
+          <button key={s} onClick={()=>{ setStsFilter(s); setShowCount(80); }}
+            className={['text-[10px] px-2.5 py-1 rounded-full border transition-colors',
+              stsFilter===s?'font-medium':'border-border text-muted-foreground'].join(' ')}
+            style={stsFilter===s?{background:STS_BG[s],borderColor:STS_COLOR[s],color:STS_COLOR[s]}:{}}>
+            {s} ({stsCounts[s]})
+          </button>
+        ) : null)}
+      </div>
+
+      {/* Edit panel */}
+      {editItem && (
+        <div className="rounded-lg border border-border bg-card p-3 space-y-2">
+          <div className="text-[12px] font-semibold">รายละเอียด: {editItem.plot} ({editItem.cpNo})</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+            {[
+              ['พืช', editItem.crop],
+              ['พื้นที่', editItem.areaSqm ? `${editItem.areaSqm.toLocaleString()} m²` : '—'],
+              ['วันไถดิน', fmtDateTh(editItem.landPrep)],
+              ['ปลูก (แผน)', fmtDateTh(editItem.transplantPlan)],
+              ['ปลูก (จริง)', fmtDateTh(editItem.transplantActual)],
+              ['เก็บเกี่ยว', fmtDateTh(editItem.removalActual)],
+              ['ถาดกล้า', editItem.seedlingTray || '—'],
+              ['จำนวนถาด', editItem.seedlingQty ? String(editItem.seedlingQty) : '—'],
+            ].map(([l,v])=>(
+              <div key={l}><div className="text-[10px] text-muted-foreground">{l}</div><div className="font-medium mt-0.5">{v}</div></div>
+            ))}
+          </div>
+          <button onClick={()=>setEditCode(null)}
+            className="mt-1 w-full py-1.5 text-[11px] rounded border border-[#155d31] text-[#155d31] bg-[#e6f3ec] cursor-pointer">
+            ปิด
+          </button>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={openCreate} className="gap-2">
-              <Plus className="w-4 h-4" /> Add Field
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editingField ? 'Edit Field' : 'Add New Field'}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="field_code">Field Code</Label>
-                <Input
-                  id="field_code"
-                  placeholder="e.g. F-001"
-                  value={formData.field_code}
-                  onChange={e => setFormData(prev => ({ ...prev, field_code: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="area_m2">Area (m²)</Label>
-                <Input
-                  id="area_m2"
-                  type="number"
-                  placeholder="e.g. 5000"
-                  value={formData.area_m2}
-                  onChange={e => setFormData(prev => ({ ...prev, area_m2: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <Select value={formData.status} onValueChange={v => setFormData(prev => ({ ...prev, status: v as FieldStatus }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {FIELD_STATUSES.map(s => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
-              <Button onClick={handleSave}>{editingField ? 'Save Changes' : 'Create Field'}</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+      )}
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {FIELD_STATUSES.map(status => {
-          const count = fields.filter(f => f.status === status).length;
-          return (
-            <Card key={status} className="border-border/50">
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className={`w-3 h-3 rounded-full ${STATUS_COLORS[status]}`} />
-                <div>
-                  <p className="text-xs text-muted-foreground">{status}</p>
-                  <p className="text-lg font-bold">{count}</p>
+      {/* Count */}
+      <div className="text-[10px] text-muted-foreground">{filtered.length} รายการ จาก {yr.length} ปี {year}</div>
+
+      {/* Field list */}
+      <div className="space-y-1">
+        {filtered.length === 0
+          ? <div className="py-10 text-center text-muted-foreground text-sm">ไม่พบแปลง</div>
+          : filtered.slice(0, showCount).map(r => {
+            const st = getPlotStatus(r);
+            const col = STS_COLOR[st.label] || '#888';
+            const bg  = STS_BG[st.label] || '#f5f5f5';
+            return (
+              <div key={r.cpNo}
+                className="flex items-center gap-2.5 px-3 py-2 rounded-lg border bg-card cursor-pointer hover:bg-muted/30 transition-colors"
+                style={{ borderLeftWidth:3, borderLeftColor:col }}
+                onClick={()=>setEditCode(editCode===r.cpNo?null:r.cpNo)}>
+                <div className="font-mono text-[12px] font-semibold w-14 flex-shrink-0" style={{ color:col }}>{r.plot}</div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background:bg, color:col }}>{st.label}</span>
+                  <span className="ml-2 text-[10px] text-muted-foreground">{r.crop}</span>
+                  {r.transplantPlan && !r.transplantActual && (
+                    <span className="ml-2 text-[10px] text-muted-foreground">ปลูก {fmtDateTh(r.transplantPlan)}</span>
+                  )}
+                  {r.transplantActual && (
+                    <span className="ml-2 text-[10px] text-muted-foreground">ปลูกแล้ว {fmtDateTh(r.transplantActual)}</span>
+                  )}
                 </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+                <span className="text-[10px] text-muted-foreground flex-shrink-0">{r.cpNo.slice(-7)}</span>
+                <span className="text-muted-foreground/50 text-base">›</span>
+              </div>
+            );
+          })}
+        {filtered.length > showCount && (
+          <button onClick={()=>setShowCount(c=>c+80)}
+            className="w-full py-2 text-[11px] text-[#155d31] border border-[#155d31] rounded-lg bg-[#e6f3ec] mt-1">
+            แสดงเพิ่มเติม ({filtered.length - showCount} รายการ)
+          </button>
+        )}
       </div>
-
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Search fields..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="pl-9"
-        />
-      </div>
-
-      {/* Table */}
-      <Card className="border-border/50">
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Field Code</TableHead>
-                <TableHead>Area (m²)</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Progress</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredFields.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
-                    {fields.length === 0 ? (
-                      <div className="flex flex-col items-center gap-2">
-                        <Wheat className="w-8 h-8 text-muted-foreground/50" />
-                        <p>No fields yet. Click &quot;Add Field&quot; to get started.</p>
-                      </div>
-                    ) : (
-                      'No fields match your search.'
-                    )}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredFields.map(field => (
-                  <TableRow key={field.id}>
-                    <TableCell className="font-medium">{field.field_code}</TableCell>
-                    <TableCell>{Number(field.area_m2).toLocaleString()}</TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className={`${STATUS_COLORS[field.status]} text-white gap-1.5`}>
-                        {field.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className="flex gap-0.5">
-                          {FIELD_STATUSES.map((s, i) => (
-                            <div
-                              key={s}
-                              className={`w-6 h-1.5 rounded-full transition-colors ${
-                                i <= statusOrder[field.status]
-                                  ? STATUS_COLORS[FIELD_STATUSES[i]]
-                                  : 'bg-muted'
-                              }`}
-                            />
-                          ))}
-                        </div>
-                        <span className="text-xs text-muted-foreground">
-                          {statusOrder[field.status] + 1}/{FIELD_STATUSES.length}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        {statusOrder[field.status] < 4 && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => updateStatus(field, FIELD_STATUSES[statusOrder[field.status] + 1])}
-                            className="text-xs"
-                          >
-                            Advance
-                          </Button>
-                        )}
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(field)}>
-                          <Pencil className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" className="text-destructive" onClick={() => handleDelete(field.id, field.field_code)}>
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
     </div>
   );
 }

@@ -1,240 +1,252 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { supabase, type WeatherForecast } from '@/lib/supabase';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Droplets, ThermometerSun, Wind, Umbrella, Eye, CloudSun } from 'lucide-react';
-import { format, parseISO, addDays } from 'date-fns';
+import { useEffect, useState, useRef, useCallback } from 'react';
+
+interface HourlyData { time: string; mm: number }
+interface DayData { date: string; dayTh: string; prob: number; mm: number; tMax: number; tMin: number; cls: 'safe'|'warn'|'danger' }
+
+const CLS_COLOR = { safe:'#155d31', warn:'#a0560a', danger:'#b52b1e' };
+const DAY_TH = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์'];
+
+type RadarView = 'now' | 'past' | 'fc';
 
 export default function WeatherPage() {
-  const [forecasts, setForecasts] = useState<WeatherForecast[]>([]);
+  const [daily, setDaily] = useState<DayData[]>([]);
+  const [hourly, setHourly] = useState<HourlyData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [radarV, setRadarV] = useState<RadarView>('now');
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const radarWrapRef = useRef<HTMLDivElement>(null);
 
-  const loadWeather = useCallback(async () => {
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const { data } = await supabase
-        .from('weather_forecasts')
-        .select('*')
-        .gte('forecast_date', today)
-        .order('forecast_date')
-        .limit(7);
-      if (data) setForecasts(data);
-    } catch {
-      // silently handle connection errors
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    const now = new Date();
+    const tz = 'Asia%2FBangkok';
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=18.7&longitude=98.9&daily=precipitation_probability_max,precipitation_sum,temperature_2m_max,temperature_2m_min&hourly=precipitation&timezone=${tz}&forecast_days=7`)
+      .then(r=>r.json())
+      .then(wx => {
+        if (wx?.daily) {
+          const d = wx.daily;
+          setDaily((d.time as string[]).map((dt:string,i:number)=>{
+            const prob = d.precipitation_probability_max[i]??0;
+            const mm   = Math.round((d.precipitation_sum[i]??0)*10)/10;
+            return { date:dt, dayTh:DAY_TH[new Date(dt+'T00:00:00').getDay()],
+              prob, mm, tMax:Math.round(d.temperature_2m_max[i]??0), tMin:Math.round(d.temperature_2m_min[i]??0),
+              cls: prob>=70?'danger':prob>=40?'warn':'safe' };
+          }));
+        }
+        if (wx?.hourly) {
+          const h = wx.hourly;
+          const startH = now.getHours();
+          // Show next 24 hours
+          const items: HourlyData[] = [];
+          for (let i = 0; i < h.time.length && items.length < 24; i++) {
+            const t = new Date(h.time[i]);
+            if (t >= now) {
+              items.push({ time: h.time[i].slice(11,16), mm: Math.round((h.precipitation[i]??0)*10)/10 });
+            }
+          }
+          setHourly(items);
+        }
+      })
+      .catch(()=>{})
+      .finally(()=>setLoading(false));
   }, []);
 
-  useEffect(() => { loadWeather(); }, [loadWeather]);
+  const drawRadar = useCallback(() => {
+    const canvas = canvasRef.current;
+    const wrap = radarWrapRef.current;
+    if (!canvas || !wrap) return;
+    canvas.width = wrap.offsetWidth || 400;
+    canvas.height = wrap.offsetHeight || 300;
+    const ctx = canvas.getContext('2d')!;
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0,0,W,H);
 
-  const avgRainProb = forecasts.length > 0
-    ? forecasts.reduce((sum, f) => sum + (f.rain_probability ?? 0), 0) / forecasts.length
-    : 0;
+    // Overlay on satellite map
+    ctx.fillStyle = 'rgba(5,12,25,0.30)';
+    ctx.fillRect(0,0,W,H);
 
-  const totalRainfall = forecasts.reduce((sum, f) => sum + (f.rainfall_mm ?? 0), 0);
-  const avgTemp = forecasts.length > 0
-    ? forecasts.reduce((sum, f) => sum + ((f.temp_high ?? 0) + (f.temp_low ?? 0)) / 2, 0) / forecasts.length
-    : 0;
+    // Grid
+    ctx.strokeStyle = 'rgba(100,140,200,0.10)'; ctx.lineWidth = 0.5;
+    for (let x=0; x<W; x+=W/10) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+    for (let y=0; y<H; y+=H/8) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+    [0.2,0.38,0.56].forEach(r=>{
+      ctx.beginPath(); ctx.arc(W/2,H/2,r*Math.min(W,H),0,Math.PI*2); ctx.stroke();
+    });
 
-  const rainDays = forecasts.filter(f => (f.rain_probability ?? 0) > 50).length;
+    function rainCell(cx:number,cy:number,rx:number,ry:number,intensity:number,alpha:number) {
+      const RAMP: [number,number,number][] = [[41,182,246],[67,160,71],[253,216,53],[251,140,0],[229,57,53],[123,31,162]];
+      const idx = Math.min(5,Math.floor(intensity*5.9));
+      const [r,g,b] = RAMP[idx];
+      const g2 = ctx.createRadialGradient(cx,cy,0,cx,cy,Math.max(rx,ry));
+      g2.addColorStop(0,`rgba(${r},${g},${b},${alpha})`);
+      g2.addColorStop(0.55,`rgba(${r},${g},${b},${alpha*0.5})`);
+      g2.addColorStop(1,`rgba(${r},${g},${b},0)`);
+      ctx.save();
+      const maxR = Math.max(rx,ry);
+      ctx.scale(rx/maxR,ry/maxR);
+      ctx.fillStyle = g2;
+      ctx.beginPath(); ctx.arc(cx*(maxR/rx),cy*(maxR/ry),maxR,0,Math.PI*2);
+      ctx.fill(); ctx.restore();
+    }
 
-  function getRainLevel(prob: number | null): { label: string; color: string } {
-    if (prob === null) return { label: 'N/A', color: 'text-muted-foreground' };
-    if (prob < 20) return { label: 'Low', color: 'text-emerald-500' };
-    if (prob < 50) return { label: 'Moderate', color: 'text-amber-500' };
-    if (prob < 80) return { label: 'High', color: 'text-orange-500' };
-    return { label: 'Very High', color: 'text-destructive' };
-  }
+    if (radarV==='now') {
+      rainCell(W*.66,H*.27,W*.20,H*.17,0.72,0.88);
+      rainCell(W*.71,H*.38,W*.11,H*.09,0.52,0.75);
+      rainCell(W*.28,H*.72,W*.13,H*.11,0.38,0.65);
+      rainCell(W*.87,H*.52,W*.09,H*.08,0.82,0.78);
+    } else if (radarV==='past') {
+      rainCell(W*.80,H*.20,W*.15,H*.13,0.62,0.82);
+      rainCell(W*.50,H*.62,W*.11,H*.09,0.42,0.68);
+      rainCell(W*.18,H*.78,W*.10,H*.08,0.32,0.58);
+    } else {
+      rainCell(W*.52,H*.42,W*.24,H*.20,0.78,0.92);
+      rainCell(W*.57,H*.52,W*.15,H*.13,0.92,0.88);
+      rainCell(W*.36,H*.67,W*.16,H*.14,0.55,0.72);
+      rainCell(W*.76,H*.62,W*.11,H*.09,0.68,0.78);
+    }
 
-  if (loading) {
-    return (
-      <div className="p-8">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 w-48 bg-muted rounded" />
-          <div className="grid grid-cols-4 gap-4">
-            {[...Array(4)].map((_, i) => (<div key={i} className="h-24 bg-muted rounded-lg" />))}
-          </div>
-          <div className="grid grid-cols-7 gap-4">
-            {[...Array(7)].map((_, i) => (<div key={i} className="h-64 bg-muted rounded-lg" />))}
-          </div>
-        </div>
-      </div>
-    );
-  }
+    // Range rings label
+    ctx.fillStyle='rgba(160,190,230,0.5)'; ctx.font='9px sans-serif'; ctx.textAlign='left';
+    ctx.fillText('50km',W/2+0.2*Math.min(W,H)+3,H/2);
+    ctx.fillText('100km',W/2+0.38*Math.min(W,H)+3,H/2);
+
+    // Farm marker
+    ctx.beginPath(); ctx.arc(W/2,H/2,6,0,Math.PI*2);
+    ctx.fillStyle='rgba(255,255,255,0.95)'; ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.6)'; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.arc(W/2,H/2,15,0,Math.PI*2); ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.font='bold 10px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('FLP2',W/2,H/2-20);
+
+    // Compass
+    const dPos:[[number,number]][] = [[W/2,13],[W-9,H/2],[W/2,H-5],[9,H/2]] as any;
+    ctx.fillStyle='rgba(200,220,255,0.5)'; ctx.font='10px sans-serif';
+    ['N','E','S','W'].forEach((l,i)=>{ ctx.textAlign='center'; ctx.fillText(l,dPos[i][0],dPos[i][1]); });
+  }, [radarV]);
+
+  useEffect(() => { drawRadar(); }, [drawRadar]);
+
+  const nowStr = new Date().toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'numeric'});
+  const lblMap: Record<RadarView,string> = {
+    now: `${nowStr} — ปัจจุบัน`,
+    past: `${nowStr} — 1 ชม.ที่แล้ว`,
+    fc: `${nowStr} — พยากรณ์ +3 ชม.`,
+  };
+
+  const hasRain = daily.some(d=>d.cls==='danger');
+  const maxMm = Math.max(...hourly.map(h=>h.mm), 1);
+
+  if (loading) return (
+    <div className="p-4 animate-pulse space-y-3">
+      <div className="flex gap-2">{[...Array(3)].map((_,i)=><div key={i} className="h-8 w-24 bg-muted rounded-full"/>)}</div>
+      <div className="h-64 bg-muted rounded-lg"/>
+      <div className="space-y-1">{[...Array(8)].map((_,i)=><div key={i} className="h-8 bg-muted rounded"/>)}</div>
+    </div>
+  );
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Weather</h1>
-        <p className="text-muted-foreground text-sm mt-1">7-day forecast and rainfall outlook</p>
+    <div className="p-3 lg:p-4 space-y-4 max-w-2xl mx-auto">
+
+      {/* Radar controls */}
+      <div className="flex gap-2">
+        {(['now','past','fc'] as RadarView[]).map(v => (
+          <button key={v} onClick={()=>setRadarV(v)}
+            className={['px-3 py-1.5 rounded-full text-[11px] border transition-colors',
+              radarV===v?'bg-[#0d1b36] text-[#8cb8f0] border-[#1a3a6c]':'border-border text-muted-foreground hover:text-foreground'].join(' ')}>
+            {v==='now'?'ปัจจุบัน':v==='past'?'1 ชม.ที่แล้ว':'พยากรณ์ +3 ชม.'}
+          </button>
+        ))}
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="border-border/50">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="bg-sky-500/10 p-2.5 rounded-lg">
-              <Droplets className="w-5 h-5 text-sky-500" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Avg Rain Probability</p>
-              <p className="text-xl font-bold">{avgRainProb.toFixed(0)}%</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="bg-emerald-500/10 p-2.5 rounded-lg">
-              <Umbrella className="w-5 h-5 text-emerald-500" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Total Rainfall</p>
-              <p className="text-xl font-bold">{totalRainfall.toFixed(1)} mm</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="bg-amber-500/10 p-2.5 rounded-lg">
-              <ThermometerSun className="w-5 h-5 text-amber-500" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Avg Temperature</p>
-              <p className="text-xl font-bold">{avgTemp.toFixed(1)}°C</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="bg-orange-500/10 p-2.5 rounded-lg">
-              <CloudSun className="w-5 h-5 text-orange-500" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Rainy Days</p>
-              <p className="text-xl font-bold">{rainDays} of 7</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Radar map */}
+      <div ref={radarWrapRef} className="relative rounded-lg overflow-hidden border border-border" style={{ height:300 }}>
+        <iframe
+          src="https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d150000!2d98.9!3d18.7!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e1!3m2!1sth!2sth!4v1717680000000!5m2!1sth!2sth"
+          className="absolute inset-0 w-full h-full border-none opacity-70"
+          allowFullScreen loading="lazy" referrerPolicy="no-referrer-when-downgrade"
+          title="แผนที่ดาวเทียมพื้นหลัง radar"
+        />
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none"/>
 
-      {/* 7-Day Forecast Cards */}
-      <div>
-        <h2 className="text-lg font-semibold mb-4">7-Day Forecast</h2>
-        {forecasts.length === 0 ? (
-          <Card className="border-border/50">
-            <CardContent className="py-12 text-center text-muted-foreground">
-              <CloudSun className="w-12 h-12 mx-auto mb-3 text-muted-foreground/50" />
-              <p>No weather data available yet.</p>
-              <p className="text-sm mt-1">Weather forecasts will appear here once data is loaded.</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3">
-            {forecasts.map((f) => {
-              const rainLevel = getRainLevel(f.rain_probability);
-              const isHighRain = (f.rain_probability ?? 0) > 50;
-              return (
-                <Card key={f.id} className={`border-border/50 transition-all ${isHighRain ? 'border-sky-500/30 bg-sky-500/5' : ''}`}>
-                  <CardContent className="p-4 space-y-3">
-                    <div className="text-center">
-                      <p className="text-xs font-medium text-muted-foreground">
-                        {format(parseISO(f.forecast_date), 'EEE')}
-                      </p>
-                      <p className="text-lg font-bold">
-                        {format(parseISO(f.forecast_date), 'd')}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {format(parseISO(f.forecast_date), 'MMM')}
-                      </p>
-                    </div>
-                    <div className="text-center">
-                      {f.description && (
-                        <p className="text-xs font-medium text-muted-foreground mb-1">{f.description}</p>
-                      )}
-                      <div className="flex justify-center gap-1 text-sm">
-                        <span className="font-semibold text-foreground">{f.temp_high ?? '--'}°</span>
-                        <span className="text-muted-foreground">/</span>
-                        <span className="text-muted-foreground">{f.temp_low ?? '--'}°</span>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Droplets className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                        <div className="flex-1">
-                          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all ${isHighRain ? 'bg-sky-500' : 'bg-sky-400'}`}
-                              style={{ width: `${f.rain_probability ?? 0}%` }}
-                            />
-                          </div>
-                        </div>
-                        <span className={`text-xs font-medium ${rainLevel.color}`}>
-                          {f.rain_probability ?? 0}%
-                        </span>
-                      </div>
-                      {f.rainfall_mm !== null && f.rainfall_mm > 0 && (
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Umbrella className="w-3 h-3 shrink-0" />
-                          <span>{f.rainfall_mm} mm</span>
-                        </div>
-                      )}
-                      {f.humidity !== null && (
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Eye className="w-3 h-3 shrink-0" />
-                          <span>{f.humidity}% humidity</span>
-                        </div>
-                      )}
-                      {f.wind_speed !== null && (
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Wind className="w-3 h-3 shrink-0" />
-                          <span>{f.wind_speed} km/h</span>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+        {/* Time label */}
+        <div className="absolute top-2 left-2 z-10 text-[10px] px-2 py-1 rounded-full"
+          style={{ background:'rgba(15,20,35,0.8)', color:'#e0e0e0', backdropFilter:'blur(4px)' }}>
+          {lblMap[radarV]}
+        </div>
+
+        {/* Rain alert badge */}
+        {hasRain && (
+          <div className="absolute top-2 right-2 z-10 text-[10px] px-2 py-1 rounded-md"
+            style={{ background:'rgba(160,60,10,0.88)', color:'#fff' }}>
+            ⚠ ฝนเข้าฟาร์ม
           </div>
         )}
+
+        {/* Scale */}
+        <div className="absolute bottom-2 right-2 z-10 flex flex-col gap-0.5">
+          {[['#7B1FA2','>50mm/hr'],['#E53935','25–50'],['#FB8C00','10–25'],['#FDD835','5–10'],['#43A047','1–5'],['#29B6F6','<1mm']].map(([c,l])=>(
+            <div key={l} className="flex items-center gap-1 text-[9px]" style={{ color:'#e0e0e0' }}>
+              <div className="w-4 h-1.5 rounded-sm" style={{ background:c }}/>
+              {l}
+            </div>
+          ))}
+        </div>
+
+        {/* Coords */}
+        <div className="absolute bottom-2 left-2 z-10 text-[9px] px-1.5 py-0.5 rounded"
+          style={{ background:'rgba(10,18,32,0.7)', color:'#c0c8d8' }}>
+          FLP2 · Chiang Mai · 18.7°N 98.9°E
+        </div>
       </div>
 
-      {/* Rainfall Chart */}
-      {forecasts.length > 0 && (
-        <Card className="border-border/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <Droplets className="w-4 h-4 text-sky-500" />
-              Rain Probability & Rainfall
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {forecasts.map((f) => (
-                <div key={f.id} className="flex items-center gap-4">
-                  <span className="text-sm font-medium w-20 shrink-0">
-                    {format(parseISO(f.forecast_date), 'EEE, MMM d')}
-                  </span>
-                  <div className="flex-1 flex items-center gap-3">
-                    <div className="flex-1 h-4 rounded bg-muted overflow-hidden">
-                      <div
-                        className="h-full bg-sky-500/80 rounded transition-all"
-                        style={{ width: `${f.rain_probability ?? 0}%` }}
-                      />
-                    </div>
-                    <span className="text-sm font-medium w-12 text-right">{f.rain_probability ?? 0}%</span>
+      {/* Hourly (24h) */}
+      <div>
+        <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 mb-2">⏰ รายชั่วโมง 24 ชม.</div>
+        <div className="rounded-lg border border-border bg-card overflow-hidden divide-y divide-border">
+          {hourly.length === 0
+            ? <div className="py-6 text-center text-[11px] text-muted-foreground">ไม่มีข้อมูล</div>
+            : hourly.map(h => {
+              const p = Math.round(h.mm/maxMm*100);
+              const c = h.mm>15?'#E53935':h.mm>8?'#FB8C00':h.mm>2?'#FDD835':'#43A047';
+              return (
+                <div key={h.time} className="flex items-center gap-2 px-3 py-1.5">
+                  <div className="w-12 font-mono text-[10px] text-muted-foreground">{h.time}</div>
+                  <div className="flex-1 h-2 rounded bg-muted overflow-hidden">
+                    <div className="h-full rounded" style={{ width:`${p}%`, background:c }}/>
                   </div>
-                  <span className="text-sm text-muted-foreground w-16 text-right">
-                    {f.rainfall_mm ?? 0} mm
-                  </span>
+                  <div className="w-10 text-right text-[10px]" style={{ color:c }}>{h.mm.toFixed(1)}</div>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+              );
+            })}
+        </div>
+      </div>
+
+      {/* 7-day table */}
+      <div>
+        <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 mb-2">📅 พยากรณ์ 7 วัน</div>
+        <div className="rounded-lg border border-border bg-card overflow-hidden divide-y divide-border">
+          {daily.length === 0
+            ? <div className="py-6 text-center text-[11px] text-muted-foreground">โหลดข้อมูลไม่ได้</div>
+            : daily.map((d,i) => {
+              const col = CLS_COLOR[d.cls];
+              const p = Math.min(100, d.prob);
+              return (
+                <div key={d.date} className="flex items-center gap-3 px-3 py-2.5"
+                  style={i===0?{background:'rgba(0,0,0,0.03)'}:{}}>
+                  <div className="w-12 text-[11px] font-medium" style={{ color: i===0?col:undefined }}>{d.dayTh}</div>
+                  <div className="w-10 text-[15px] font-medium tabular-nums" style={{ color:col }}>{d.prob}%</div>
+                  <div className="flex-1 h-1.5 rounded-full bg-border overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width:`${p}%`, background:col }}/>
+                  </div>
+                  <div className="w-12 text-right text-[10px] text-muted-foreground">{d.mm} mm</div>
+                  <div className="w-14 text-right text-[10px] text-muted-foreground tabular-nums">{d.tMax}°/{d.tMin}°</div>
+                </div>
+              );
+            })}
+        </div>
+      </div>
+
     </div>
   );
 }

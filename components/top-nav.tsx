@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 const NAV = [
   { href: '/',           label: 'แดชบอร์ด', icon: '⊞' },
   { href: '/map',        label: 'แผนที่',    icon: '⊠' },
-  { href: '/crop-plans', label: 'แผนการปลูก', icon: '⊟' },
+  { href: '/crop-plans', label: 'วางแผน', icon: '⊟' },
   { href: '/fields',     label: 'แปลง',     icon: '⊡' },
   { href: '/weather',    label: 'อากาศ',    icon: '☁' },
 ];

@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase, type Field, type FieldStatus, FIELD_STATUSES } from '@/lib/supabase';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { X } from 'lucide-react';
+import { X, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 
 const STATUS_FILL: Record<string, string> = {
   'Not Started':          '#64748b',
@@ -249,6 +249,13 @@ export default function FarmMap() {
   const [updating, setUpdating] = useState(false);
   const { toast } = useToast();
 
+  // Zoom / pan state
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const isDragging = useRef(false);
+  const dragOrigin = useRef({ mouseX: 0, mouseY: 0, panX: 0, panY: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+
   const loadFields = useCallback(async () => {
     try {
       const { data } = await supabase.from('fields').select('*').order('field_code');
@@ -267,7 +274,6 @@ export default function FarmMap() {
     if (dbField) {
       setSelected(dbField);
     } else {
-      // Field not in DB yet or Supabase not connected — show static info
       setSelected({
         id: '',
         field_code: code,
@@ -298,6 +304,47 @@ export default function FarmMap() {
     setUpdating(false);
   }
 
+  // ── Zoom / pan handlers ──────────────────────────────────────────────
+  function handleWheel(e: React.WheelEvent) {
+    e.preventDefault();
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const newZoom = Math.max(0.3, Math.min(10, zoom * factor));
+    // Zoom toward cursor
+    const cx = e.clientX - rect.left - rect.width / 2;
+    const cy = e.clientY - rect.top - rect.height / 2;
+    setPan(p => ({
+      x: cx - (cx - p.x) * (newZoom / zoom),
+      y: cy - (cy - p.y) * (newZoom / zoom),
+    }));
+    setZoom(newZoom);
+  }
+
+  function handleMouseDown(e: React.MouseEvent) {
+    if (e.button !== 0) return;
+    isDragging.current = true;
+    dragOrigin.current = { mouseX: e.clientX, mouseY: e.clientY, panX: pan.x, panY: pan.y };
+    e.currentTarget.setAttribute('style', 'cursor: grabbing');
+  }
+
+  function handleMouseMove(e: React.MouseEvent) {
+    if (!isDragging.current) return;
+    const dx = e.clientX - dragOrigin.current.mouseX;
+    const dy = e.clientY - dragOrigin.current.mouseY;
+    setPan({ x: dragOrigin.current.panX + dx, y: dragOrigin.current.panY + dy });
+  }
+
+  function handleMouseUp(e: React.MouseEvent) {
+    isDragging.current = false;
+    e.currentTarget.setAttribute('style', 'cursor: grab');
+  }
+
+  function resetView() {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }
+
   if (loading) {
     return (
       <div className="p-8 animate-pulse space-y-4">
@@ -312,7 +359,7 @@ export default function FarmMap() {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Farm Map</h1>
-          <p className="text-muted-foreground text-sm mt-1">Farm Lert Phan 2 (FLP2) — click a plot to view or update status</p>
+          <p className="text-muted-foreground text-sm mt-1">Farm Lert Phan 2 (FLP2) — scroll to zoom · drag to pan · click plot to edit</p>
         </div>
         {/* Legend */}
         <div className="flex flex-wrap gap-3 text-xs">
@@ -327,58 +374,105 @@ export default function FarmMap() {
 
       <div className="flex gap-4 items-start">
         {/* Map container */}
-        <div className="flex-1 overflow-auto rounded-lg border border-border" style={{ maxHeight: '75vh' }}>
-          <svg
-            viewBox="0 0 2500 1333"
-            style={{ display: 'block', width: '100%', minWidth: '900px' }}
+        <div className="flex-1 flex flex-col gap-2">
+          {/* Zoom controls */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { const z = Math.min(10, zoom * 1.3); setZoom(z); }}
+              className="p-1.5 rounded border border-border bg-card hover:bg-muted text-sm"
+              title="Zoom in"
+            >
+              <ZoomIn className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => { const z = Math.max(0.3, zoom / 1.3); setZoom(z); }}
+              className="p-1.5 rounded border border-border bg-card hover:bg-muted text-sm"
+              title="Zoom out"
+            >
+              <ZoomOut className="w-4 h-4" />
+            </button>
+            <button
+              onClick={resetView}
+              className="p-1.5 rounded border border-border bg-card hover:bg-muted text-sm"
+              title="Reset view"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
+            <span className="text-xs text-muted-foreground">{Math.round(zoom * 100)}%</span>
+          </div>
+
+          {/* Map viewport */}
+          <div
+            ref={containerRef}
+            className="overflow-hidden rounded-lg border border-border bg-black"
+            style={{ height: '75vh', cursor: 'grab', userSelect: 'none' }}
+            onWheel={handleWheel}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
           >
-            {/* Background image */}
-            <image href="/farm-map.jpg" x="0" y="0" width="2500" height="1333" preserveAspectRatio="xMidYMid slice" />
+            <div
+              style={{
+                transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})`,
+                transformOrigin: '0 0',
+                position: 'relative',
+                top: '50%',
+                left: '50%',
+                width: 'max-content',
+              }}
+            >
+              <svg
+                viewBox="0 0 2500 1333"
+                width="2500"
+                height="1333"
+                style={{ display: 'block' }}
+                onClick={e => { if (isDragging.current) e.stopPropagation(); }}
+              >
+                <image href="/farm-map.jpg" x="0" y="0" width="2500" height="1333" />
 
-            {/* Field overlays */}
-            {LAYOUT.map(([code, x, y, w, h]) => {
-              const field = fieldMap[code];
-              const status = field?.status ?? 'Not Started';
-              const isNotStarted = status === 'Not Started';
-              const fill = STATUS_FILL[status];
-              const isSelected = selected?.field_code === code;
-              const fs = code.length > 4 ? 11 : code.length > 3 ? 13 : 15;
-              return (
-                <g key={code} style={{ cursor: 'pointer' }} onClick={() => handleClick(code)}>
-                  <rect
-                    x={x} y={y} width={w} height={h}
-                    rx={4}
-                    fill={fill}
-                    fillOpacity={isSelected ? 0.75 : isNotStarted ? 0.08 : 0.60}
-                    stroke={isSelected ? '#ffffff' : isNotStarted ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.5)'}
-                    strokeWidth={isSelected ? 3 : 1}
-                  />
-                  {/* Show label only when selected or has non-default status */}
-                  {(!isNotStarted || isSelected) && (
-                    <text
-                      x={x + w / 2}
-                      y={y + h / 2 + fs * 0.35}
-                      textAnchor="middle"
-                      fill="#ffffff"
-                      fontSize={fs}
-                      fontWeight="700"
-                      style={{ pointerEvents: 'none', userSelect: 'none' }}
-                      filter="url(#shadow)"
-                    >
-                      {code}
-                    </text>
-                  )}
-                </g>
-              );
-            })}
+                {LAYOUT.map(([code, x, y, w, h]) => {
+                  const field = fieldMap[code];
+                  const status = field?.status ?? 'Not Started';
+                  const isNotStarted = status === 'Not Started';
+                  const fill = STATUS_FILL[status];
+                  const isSelected = selected?.field_code === code;
+                  const fs = code.length > 4 ? 11 : code.length > 3 ? 13 : 15;
+                  return (
+                    <g key={code} style={{ cursor: 'pointer' }} onClick={() => handleClick(code)}>
+                      <rect
+                        x={x} y={y} width={w} height={h}
+                        rx={3}
+                        fill={fill}
+                        fillOpacity={isSelected ? 0.82 : isNotStarted ? 0.42 : 0.68}
+                        stroke={isSelected ? '#ffffff' : '#000000'}
+                        strokeOpacity={isSelected ? 1 : 0.6}
+                        strokeWidth={isSelected ? 3 : 1.5}
+                      />
+                      <text
+                        x={x + w / 2}
+                        y={y + h / 2 + fs * 0.35}
+                        textAnchor="middle"
+                        fill="#ffffff"
+                        fontSize={fs}
+                        fontWeight="700"
+                        style={{ pointerEvents: 'none', userSelect: 'none' }}
+                        filter="url(#shadow)"
+                      >
+                        {code}
+                      </text>
+                    </g>
+                  );
+                })}
 
-            {/* Text shadow filter */}
-            <defs>
-              <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-                <feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="black" floodOpacity="0.8" />
-              </filter>
-            </defs>
-          </svg>
+                <defs>
+                  <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="1" stdDeviation="1.5" floodColor="black" floodOpacity="0.9" />
+                  </filter>
+                </defs>
+              </svg>
+            </div>
+          </div>
         </div>
 
         {/* Sidebar */}

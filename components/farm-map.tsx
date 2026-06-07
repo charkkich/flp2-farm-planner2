@@ -249,12 +249,15 @@ export default function FarmMap() {
   const [updating, setUpdating] = useState(false);
   const { toast } = useToast();
 
-  // Zoom / pan state
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const isDragging = useRef(false);
-  const dragOrigin = useRef({ mouseX: 0, mouseY: 0, panX: 0, panY: 0 });
+  // Zoom / pan — stored in refs so wheel handler closure stays fresh
+  const zoomRef = useRef(1);
+  const panRef = useRef({ x: 0, y: 0 });
+  const [, forceRender] = useState(0);          // trigger re-render after zoom/pan
   const containerRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const hasDragged = useRef(false);             // distinguish click from drag
+  const dragOrigin = useRef({ mx: 0, my: 0, px: 0, py: 0 });
 
   const loadFields = useCallback(async () => {
     try {
@@ -267,9 +270,33 @@ export default function FarmMap() {
 
   useEffect(() => { loadFields(); }, [loadFields]);
 
+  // Attach wheel listener directly (passive:false so preventDefault works)
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    function onWheel(e: WheelEvent) {
+      e.preventDefault();
+      const rect = el!.getBoundingClientRect();
+      const factor = e.deltaY < 0 ? 1.18 : 1 / 1.18;
+      const newZoom = Math.max(0.25, Math.min(12, zoomRef.current * factor));
+      // Zoom toward cursor
+      const cx = e.clientX - rect.left - rect.width / 2;
+      const cy = e.clientY - rect.top - rect.height / 2;
+      panRef.current = {
+        x: cx - (cx - panRef.current.x) * (newZoom / zoomRef.current),
+        y: cy - (cy - panRef.current.y) * (newZoom / zoomRef.current),
+      };
+      zoomRef.current = newZoom;
+      forceRender(n => n + 1);
+    }
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
   const fieldMap = Object.fromEntries(fields.map(f => [f.field_code, f]));
 
-  function handleClick(code: string) {
+  function handleFieldClick(code: string) {
+    if (hasDragged.current) return;  // ignore if mouse moved during mousedown
     const dbField = fieldMap[code];
     if (dbField) {
       setSelected(dbField);
@@ -304,46 +331,37 @@ export default function FarmMap() {
     setUpdating(false);
   }
 
-  // ── Zoom / pan handlers ──────────────────────────────────────────────
-  function handleWheel(e: React.WheelEvent) {
-    e.preventDefault();
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    const newZoom = Math.max(0.3, Math.min(10, zoom * factor));
-    // Zoom toward cursor
-    const cx = e.clientX - rect.left - rect.width / 2;
-    const cy = e.clientY - rect.top - rect.height / 2;
-    setPan(p => ({
-      x: cx - (cx - p.x) * (newZoom / zoom),
-      y: cy - (cy - p.y) * (newZoom / zoom),
-    }));
-    setZoom(newZoom);
-  }
-
-  function handleMouseDown(e: React.MouseEvent) {
+  function onMouseDown(e: React.MouseEvent) {
     if (e.button !== 0) return;
     isDragging.current = true;
-    dragOrigin.current = { mouseX: e.clientX, mouseY: e.clientY, panX: pan.x, panY: pan.y };
-    e.currentTarget.setAttribute('style', 'cursor: grabbing');
+    hasDragged.current = false;
+    dragOrigin.current = { mx: e.clientX, my: e.clientY, px: panRef.current.x, py: panRef.current.y };
   }
 
-  function handleMouseMove(e: React.MouseEvent) {
+  function onMouseMove(e: React.MouseEvent) {
     if (!isDragging.current) return;
-    const dx = e.clientX - dragOrigin.current.mouseX;
-    const dy = e.clientY - dragOrigin.current.mouseY;
-    setPan({ x: dragOrigin.current.panX + dx, y: dragOrigin.current.panY + dy });
+    const dx = e.clientX - dragOrigin.current.mx;
+    const dy = e.clientY - dragOrigin.current.my;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) hasDragged.current = true;
+    panRef.current = { x: dragOrigin.current.px + dx, y: dragOrigin.current.py + dy };
+    forceRender(n => n + 1);
   }
 
-  function handleMouseUp(e: React.MouseEvent) {
-    isDragging.current = false;
-    e.currentTarget.setAttribute('style', 'cursor: grab');
+  function onMouseUp() { isDragging.current = false; }
+
+  function zoomBy(factor: number) {
+    zoomRef.current = Math.max(0.25, Math.min(12, zoomRef.current * factor));
+    forceRender(n => n + 1);
   }
 
   function resetView() {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
+    zoomRef.current = 1;
+    panRef.current = { x: 0, y: 0 };
+    forceRender(n => n + 1);
   }
+
+  const zoom = zoomRef.current;
+  const pan = panRef.current;
 
   if (loading) {
     return (
@@ -361,11 +379,10 @@ export default function FarmMap() {
           <h1 className="text-2xl font-bold tracking-tight">Farm Map</h1>
           <p className="text-muted-foreground text-sm mt-1">Farm Lert Phan 2 (FLP2) — scroll to zoom · drag to pan · click plot to edit</p>
         </div>
-        {/* Legend */}
         <div className="flex flex-wrap gap-3 text-xs">
           {FIELD_STATUSES.map(s => (
             <div key={s} className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-sm opacity-80" style={{ background: STATUS_FILL[s] }} />
+              <div className="w-3 h-3 rounded-sm" style={{ background: STATUS_FILL[s] }} />
               <span className="text-muted-foreground">{s}</span>
             </div>
           ))}
@@ -373,29 +390,16 @@ export default function FarmMap() {
       </div>
 
       <div className="flex gap-4 items-start">
-        {/* Map container */}
         <div className="flex-1 flex flex-col gap-2">
-          {/* Zoom controls */}
+          {/* Zoom toolbar */}
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => { const z = Math.min(10, zoom * 1.3); setZoom(z); }}
-              className="p-1.5 rounded border border-border bg-card hover:bg-muted text-sm"
-              title="Zoom in"
-            >
+            <button onClick={() => zoomBy(1.3)} className="p-1.5 rounded border border-border bg-card hover:bg-muted" title="Zoom in">
               <ZoomIn className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => { const z = Math.max(0.3, zoom / 1.3); setZoom(z); }}
-              className="p-1.5 rounded border border-border bg-card hover:bg-muted text-sm"
-              title="Zoom out"
-            >
+            <button onClick={() => zoomBy(1 / 1.3)} className="p-1.5 rounded border border-border bg-card hover:bg-muted" title="Zoom out">
               <ZoomOut className="w-4 h-4" />
             </button>
-            <button
-              onClick={resetView}
-              className="p-1.5 rounded border border-border bg-card hover:bg-muted text-sm"
-              title="Reset view"
-            >
+            <button onClick={resetView} className="p-1.5 rounded border border-border bg-card hover:bg-muted" title="Reset">
               <Maximize2 className="w-4 h-4" />
             </button>
             <span className="text-xs text-muted-foreground">{Math.round(zoom * 100)}%</span>
@@ -404,70 +408,61 @@ export default function FarmMap() {
           {/* Map viewport */}
           <div
             ref={containerRef}
-            className="overflow-hidden rounded-lg border border-border bg-black"
-            style={{ height: '75vh', cursor: 'grab', userSelect: 'none' }}
-            onWheel={handleWheel}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
+            className="overflow-hidden rounded-lg border border-border bg-black select-none"
+            style={{ height: '75vh', cursor: isDragging.current ? 'grabbing' : 'grab' }}
+            onMouseDown={onMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={onMouseUp}
           >
+            {/* Inner div that moves & scales */}
             <div
+              ref={wrapperRef}
               style={{
-                transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})`,
-                transformOrigin: '0 0',
-                position: 'relative',
+                position: 'absolute',
                 top: '50%',
                 left: '50%',
-                width: 'max-content',
+                transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})`,
+                transformOrigin: 'center center',
+                width: 2500,
+                height: 1333,
               }}
             >
-              <svg
-                viewBox="0 0 2500 1333"
-                width="2500"
-                height="1333"
-                style={{ display: 'block' }}
-                onClick={e => { if (isDragging.current) e.stopPropagation(); }}
-              >
+              <svg viewBox="0 0 2500 1333" width="2500" height="1333" style={{ display: 'block' }}>
                 <image href="/farm-map.jpg" x="0" y="0" width="2500" height="1333" />
 
                 {LAYOUT.map(([code, x, y, w, h]) => {
                   const field = fieldMap[code];
                   const status = field?.status ?? 'Not Started';
-                  const isNotStarted = status === 'Not Started';
                   const fill = STATUS_FILL[status];
                   const isSelected = selected?.field_code === code;
                   const fs = code.length > 4 ? 11 : code.length > 3 ? 13 : 15;
                   return (
-                    <g key={code} style={{ cursor: 'pointer' }} onClick={() => handleClick(code)}>
+                    <g key={code} style={{ cursor: 'pointer' }} onClick={() => handleFieldClick(code)}>
                       <rect
                         x={x} y={y} width={w} height={h}
                         rx={3}
                         fill={fill}
-                        fillOpacity={isSelected ? 0.82 : isNotStarted ? 0.42 : 0.68}
-                        stroke={isSelected ? '#ffffff' : '#000000'}
-                        strokeOpacity={isSelected ? 1 : 0.6}
+                        fillOpacity={isSelected ? 0.85 : 0.60}
+                        stroke={isSelected ? '#fff' : 'rgba(0,0,0,0.7)'}
                         strokeWidth={isSelected ? 3 : 1.5}
                       />
                       <text
-                        x={x + w / 2}
-                        y={y + h / 2 + fs * 0.35}
+                        x={x + w / 2} y={y + h / 2 + fs * 0.36}
                         textAnchor="middle"
-                        fill="#ffffff"
+                        fill="#fff"
                         fontSize={fs}
                         fontWeight="700"
-                        style={{ pointerEvents: 'none', userSelect: 'none' }}
-                        filter="url(#shadow)"
-                      >
-                        {code}
-                      </text>
+                        style={{ pointerEvents: 'none' }}
+                        filter="url(#sh)"
+                      >{code}</text>
                     </g>
                   );
                 })}
 
                 <defs>
-                  <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-                    <feDropShadow dx="0" dy="1" stdDeviation="1.5" floodColor="black" floodOpacity="0.9" />
+                  <filter id="sh" x="-25%" y="-25%" width="150%" height="150%">
+                    <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#000" floodOpacity="1" />
                   </filter>
                 </defs>
               </svg>

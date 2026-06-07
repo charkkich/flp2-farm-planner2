@@ -1,299 +1,215 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { supabase, type Field } from '@/lib/supabase';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { CalendarCheck, Clock, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-import { format, differenceInDays, parseISO } from 'date-fns';
+import { useEffect, useState, useMemo, useCallback, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { supabase, type CropPlan, STATUS_COLORS, RISK_COLORS, getRiskLevel, fmtDateShort, daysUntil, getPlanRowColor, getPlanPriority } from '@/lib/supabase';
 
-export default function PlanningPage() {
-  const [fields, setFields] = useState<Field[]>([]);
+const YEARS = [2026,2025,2024,2023];
+const STATUS_OPTS = ['all','Planned','Preparing','Ready','Planted','Overdue'];
+
+function PlanningInner() {
+  const searchParams = useSearchParams();
+  const [plans, setPlans] = useState<CropPlan[]>([]);
+  const [weather, setWeather] = useState<{[date:string]:number}>({});
   const [loading, setLoading] = useState(true);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editPlanned, setEditPlanned] = useState('');
-  const [editActual, setEditActual] = useState('');
-  const { toast } = useToast();
+  const [year, setYear] = useState(2026);
+  const [statusFilter, setStatusFilter] = useState(searchParams?.get('status')||'all');
+  const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState<string|null>(null);
 
-  const loadFields = useCallback(async () => {
-    try {
-      const { data } = await supabase.from('fields').select('*').order('field_code');
-      if (data) setFields(data);
-    } catch {
-      // silently handle connection errors
-    } finally {
-      setLoading(false);
+  const load = useCallback(async () => {
+    const [{ data: cp }, wxRes] = await Promise.all([
+      supabase.from('crop_plans').select('*').order('required_ready_date',{nullsLast:true}),
+      fetch('https://api.open-meteo.com/v1/forecast?latitude=18.7&longitude=98.9&daily=precipitation_probability_max&timezone=Asia%2FBangkok&forecast_days=14').then(r=>r.json()).catch(()=>null),
+    ]);
+    setPlans(cp||[]);
+    if (wxRes?.daily) {
+      const wx: {[d:string]:number} = {};
+      (wxRes.daily.time as string[]).forEach((dt:string,i:number)=>{
+        wx[dt] = wxRes.daily.precipitation_probability_max[i]??0;
+      });
+      setWeather(wx);
     }
+    setLoading(false);
   }, []);
 
-  useEffect(() => { loadFields(); }, [loadFields]);
+  useEffect(() => { load(); }, [load]);
 
-  function startEdit(field: Field) {
-    setEditingId(field.id);
-    setEditPlanned(field.planned_transplant_date ?? '');
-    setEditActual(field.actual_transplant_date ?? '');
-  }
+  const today = useMemo(()=>{ const d=new Date();d.setHours(0,0,0,0);return d; },[]);
 
-  async function saveEdit(field: Field) {
-    const updates: Partial<Pick<Field, 'planned_transplant_date' | 'actual_transplant_date'>> = {};
-    updates.planned_transplant_date = editPlanned || null;
-    updates.actual_transplant_date = editActual || null;
+  const filtered = useMemo(()=>plans
+    .map(p=>{
+      if (!['Ready','Planted','Harvested'].includes(p.status)&&p.required_ready_date&&new Date(p.required_ready_date+'T00:00:00')<today)
+        return {...p,status:'Overdue' as const};
+      return p;
+    })
+    .filter(p=>{
+      if (p.year!==year) return false;
+      if (p.status==='Harvested') return false;
+      if (statusFilter!=='all'&&p.status!==statusFilter) return false;
+      if (search) {
+        const q=search.toLowerCase();
+        return (p.cp_no||'').toLowerCase().includes(q)||(p.field_code||'').toLowerCase().includes(q)||(p.crop_name||'').toLowerCase().includes(q);
+      }
+      return true;
+    })
+    .sort((a,b)=>{
+      const pa=a.status==='Overdue'?0:a.status==='Preparing'?1:a.status==='Planned'?2:3;
+      const pb=b.status==='Overdue'?0:b.status==='Preparing'?1:b.status==='Planned'?2:3;
+      if(pa!==pb) return pa-pb;
+      return (a.required_ready_date||'9999')<(b.required_ready_date||'9999')?-1:1;
+    }),
+  [plans,year,statusFilter,search,today]);
 
-    const { error } = await supabase.from('fields').update(updates).eq('id', field.id);
-    if (error) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
-      return;
+  // Rain risk for a plan's plant date
+  function rainRisk(p: CropPlan): number {
+    if (!p.planned_plant_date) return 0;
+    const d = new Date(p.planned_plant_date+'T00:00:00');
+    // Check 3 days around plant date
+    let maxProb = 0;
+    for (let i=-1;i<=1;i++){
+      const dd = new Date(d);dd.setDate(d.getDate()+i);
+      const key = dd.toISOString().split('T')[0];
+      if (weather[key]>maxProb) maxProb=weather[key];
     }
-    toast({ title: 'Updated', description: `${field.field_code} planning dates saved.` });
-    setEditingId(null);
-    loadFields();
+    return maxProb;
   }
 
-  const readyFields = fields.filter(f => f.status === 'Ready For Transplant');
-  const inProgress = fields.filter(f => ['Plowing', 'Harrowing', 'Ridging'].includes(f.status));
-
-  const today = new Date();
-  const overdueCount = readyFields.filter(f => {
-    if (!f.planned_transplant_date) return false;
-    return parseISO(f.planned_transplant_date) < today;
-  }).length;
-
-  const upcomingCount = readyFields.filter(f => {
-    if (!f.planned_transplant_date) return false;
-    const diff = differenceInDays(parseISO(f.planned_transplant_date), today);
-    return diff >= 0 && diff <= 7;
-  }).length;
-
-  const transplantedCount = fields.filter(f => f.actual_transplant_date).length;
-
-  if (loading) {
-    return (
-      <div className="p-8">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 w-48 bg-muted rounded" />
-          <div className="grid grid-cols-4 gap-4">
-            {[...Array(4)].map((_, i) => (<div key={i} className="h-24 bg-muted rounded-lg" />))}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="p-4 animate-pulse space-y-3">
+      <div className="h-8 w-48 bg-muted rounded"/><div className="space-y-1">{[...Array(10)].map((_,i)=><div key={i} className="h-12 bg-muted rounded"/>)}</div>
+    </div>
+  );
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Planning</h1>
-        <p className="text-muted-foreground text-sm mt-1">Schedule transplant dates and track progress</p>
+    <div className="p-4 space-y-4">
+      <div className="flex items-start justify-between flex-wrap gap-2">
+        <div>
+          <h1 className="text-base font-bold">Preparation Planning</h1>
+          <p className="text-[11px] text-muted-foreground">
+            {filtered.length} plans · 
+            <span className="text-red-500 mx-1">{filtered.filter(p=>p.status==='Overdue').length} overdue</span>·
+            <span className="text-amber-500 mx-1">{filtered.filter(p=>{ const dl=daysUntil(p.required_ready_date); return dl!==null&&dl>=0&&dl<=7&&p.status!=='Ready'; }).length} at risk</span>
+          </p>
+        </div>
+        <div className="flex gap-1">
+          {YEARS.map(y=>(
+            <button key={y} onClick={()=>{setYear(y);setStatusFilter('all');}}
+              className={['px-2.5 py-1 rounded text-[11px] font-medium border',y===year?'bg-[#155d31] text-white border-[#155d31]':'border-border text-muted-foreground'].join(' ')}>
+              {y}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="border-border/50">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="bg-sky-500/10 p-2.5 rounded-lg">
-              <CalendarCheck className="w-5 h-5 text-sky-500" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Ready to Transplant</p>
-              <p className="text-xl font-bold">{readyFields.length}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="bg-amber-500/10 p-2.5 rounded-lg">
-              <AlertCircle className="w-5 h-5 text-amber-500" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Overdue</p>
-              <p className="text-xl font-bold">{overdueCount}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="bg-emerald-500/10 p-2.5 rounded-lg">
-              <Clock className="w-5 h-5 text-emerald-500" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">This Week</p>
-              <p className="text-xl font-bold">{upcomingCount}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="bg-primary/10 p-2.5 rounded-lg">
-              <CheckCircle2 className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Transplanted</p>
-              <p className="text-xl font-bold">{transplantedCount}</p>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Legend */}
+      <div className="flex gap-3 text-[10px] flex-wrap">
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-100 border-l-2 border-red-500"/><span className="text-red-600">Overdue</span></span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-50 border-l-2 border-yellow-400"/><span className="text-amber-600">At Risk (≤7 days)</span></span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-transparent border-l-2 border-green-600"/><span className="text-muted-foreground">On Schedule</span></span>
       </div>
 
-      {/* Ready for Transplant */}
-      <Card className="border-border/50">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
-            <CalendarCheck className="w-4 h-4 text-sky-500" />
-            Ready for Transplant
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Field Code</TableHead>
-                <TableHead>Area (m²)</TableHead>
-                <TableHead>Planned Transplant Date</TableHead>
-                <TableHead>Actual Transplant Date</TableHead>
-                <TableHead>Days Until/Overdue</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {readyFields.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                    No fields are ready for transplant yet.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                readyFields.map(field => {
-                  const isEditing = editingId === field.id;
-                  const isOverdue = field.planned_transplant_date && parseISO(field.planned_transplant_date) < today;
-                  const daysDiff = field.planned_transplant_date
-                    ? differenceInDays(parseISO(field.planned_transplant_date), today)
-                    : null;
+      {/* Filters */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <input type="text" placeholder="Search field / CP / crop…" value={search}
+          onChange={e=>setSearch(e.target.value)}
+          className="h-7 px-2.5 rounded border border-border bg-card text-[11px] w-52 focus:outline-none focus:ring-1 focus:ring-[#155d31]"/>
+        <div className="flex gap-1 flex-wrap">
+          {STATUS_OPTS.map(s=>{
+            const cnt = s==='all'?filtered.length:filtered.filter(p=>p.status===s).length;
+            return (
+              <button key={s} onClick={()=>setStatusFilter(s)}
+                className={['px-2 py-1 rounded text-[10px] border',statusFilter===s?'bg-[#155d31] text-white border-[#155d31]':'border-border text-muted-foreground'].join(' ')}>
+                {s==='all'?'All':s} ({cnt})
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-                  return (
-                    <TableRow key={field.id}>
-                      <TableCell className="font-medium">{field.field_code}</TableCell>
-                      <TableCell>{Number(field.area_m2).toLocaleString()}</TableCell>
-                      <TableCell>
-                        {isEditing ? (
-                          <Input type="date" value={editPlanned} onChange={e => setEditPlanned(e.target.value)} className="w-40" />
-                        ) : field.planned_transplant_date ? (
-                          format(parseISO(field.planned_transplant_date), 'MMM d, yyyy')
-                        ) : (
-                          <span className="text-muted-foreground">Not set</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {isEditing ? (
-                          <Input type="date" value={editActual} onChange={e => setEditActual(e.target.value)} className="w-40" />
-                        ) : field.actual_transplant_date ? (
-                          <span className="flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                            {format(parseISO(field.actual_transplant_date), 'MMM d, yyyy')}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">Pending</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {field.actual_transplant_date ? (
-                          <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-200">Done</Badge>
-                        ) : daysDiff !== null ? (
-                          <Badge variant={isOverdue ? 'destructive' : 'secondary'} className={isOverdue ? '' : 'bg-sky-500/10 text-sky-600 border-sky-200'}>
-                            {isOverdue ? `${Math.abs(daysDiff)}d overdue` : daysDiff === 0 ? 'Today' : `${daysDiff}d left`}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground">--</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {isEditing ? (
-                          <div className="flex gap-1 justify-end">
-                            <Button size="sm" onClick={() => saveEdit(field)}>Save</Button>
-                            <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>Cancel</Button>
-                          </div>
-                        ) : (
-                          <Button size="sm" variant="ghost" onClick={() => startEdit(field)}>
-                            <CalendarCheck className="w-3.5 h-3.5 mr-1" /> Schedule
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {/* In Progress */}
-      <Card className="border-border/50">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
-            <Clock className="w-4 h-4 text-amber-500" />
-            In Progress
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Field Code</TableHead>
-                <TableHead>Area (m²)</TableHead>
-                <TableHead>Current Status</TableHead>
-                <TableHead>Planned Transplant Date</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {inProgress.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                    No fields currently in preparation.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                inProgress.map(field => {
-                  const isEditing = editingId === field.id;
-                  return (
-                    <TableRow key={field.id}>
-                      <TableCell className="font-medium">{field.field_code}</TableCell>
-                      <TableCell>{Number(field.area_m2).toLocaleString()}</TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{field.status}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        {isEditing ? (
-                          <Input type="date" value={editPlanned} onChange={e => setEditPlanned(e.target.value)} className="w-40" />
-                        ) : field.planned_transplant_date ? (
-                          format(parseISO(field.planned_transplant_date), 'MMM d, yyyy')
-                        ) : (
-                          <span className="text-muted-foreground">Not set</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {isEditing ? (
-                          <div className="flex gap-1 justify-end">
-                            <Button size="sm" onClick={() => saveEdit(field)}>Save</Button>
-                            <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>Cancel</Button>
-                          </div>
-                        ) : (
-                          <Button size="sm" variant="ghost" onClick={() => startEdit(field)}>
-                            <CalendarCheck className="w-3.5 h-3.5 mr-1" /> Schedule
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      {/* Planning table */}
+      <div className="rounded-lg border border-border overflow-hidden text-[11px]">
+        <div className="hidden lg:grid px-3 py-2 bg-muted/40 border-b border-border text-[10px] font-semibold text-muted-foreground uppercase tracking-wide gap-2"
+          style={{gridTemplateColumns:'80px 110px 130px 100px 100px 80px 70px 80px 70px'}}>
+          <div>Field</div><div>CP No</div><div>Crop</div><div>Plant Date</div>
+          <div>Ready Date</div><div>Days Left</div><div>Status</div>
+          <div>Rain Risk</div><div>Priority</div>
+        </div>
+        <div className="divide-y divide-border">
+          {filtered.length===0
+            ? <div className="py-10 text-center text-muted-foreground">No plans</div>
+            : filtered.map(p=>{
+              const rowBg = getPlanRowColor(p);
+              const st = STATUS_COLORS[p.status]||STATUS_COLORS['Planned'];
+              const dl = daysUntil(p.required_ready_date);
+              const rr = rainRisk(p);
+              const rl = getRiskLevel(rr);
+              const rStyle = RISK_COLORS[rl];
+              const prio = getPlanPriority(p);
+              const prioStyle = prio==='High'?{bg:'#fee2e2',text:'#dc2626'}:prio==='Medium'?{bg:'#fef3c7',text:'#d97706'}:{bg:'#dcfce7',text:'#15803d'};
+              const isOpen=expanded===p.id;
+              return (
+                <div key={p.id}>
+                  {/* Desktop */}
+                  <div className="hidden lg:grid px-3 py-2 items-center gap-2 cursor-pointer hover:opacity-90"
+                    style={{gridTemplateColumns:'80px 110px 130px 100px 100px 80px 70px 80px 70px',background:rowBg||undefined}}
+                    onClick={()=>setExpanded(isOpen?null:p.id)}>
+                    <div className="font-mono font-semibold">{p.field_code}</div>
+                    <div className="text-muted-foreground text-[10px]">{p.cp_no}</div>
+                    <div className="truncate">{p.crop_name}</div>
+                    <div>{fmtDateShort(p.planned_plant_date)}</div>
+                    <div>{fmtDateShort(p.required_ready_date)}</div>
+                    <div className={dl!==null&&dl<0?'text-red-500 font-semibold':dl!==null&&dl<=7?'text-amber-500 font-medium':''}>
+                      {dl!==null?(dl===0?'Today':dl>0?`${dl}d`:`${-dl}d OV`):'—'}
+                    </div>
+                    <div><span className="px-1.5 py-0.5 rounded-full text-[10px]" style={{background:st.bg,color:st.text}}>{p.status}</span></div>
+                    <div>{rr>0?<span className="px-1.5 py-0.5 rounded-full text-[10px]" style={{background:rStyle.bg,color:rStyle.text}}>{rr}%</span>:<span className="text-muted-foreground">—</span>}</div>
+                    <div><span className="px-1.5 py-0.5 rounded-full text-[10px]" style={{background:prioStyle.bg,color:prioStyle.text}}>{prio}</span></div>
+                  </div>
+                  {/* Mobile */}
+                  <div className="lg:hidden px-3 py-2 cursor-pointer" style={{background:rowBg||undefined}}
+                    onClick={()=>setExpanded(isOpen?null:p.id)}>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-semibold text-[12px]">{p.field_code}</span>
+                      <span className="flex-1 text-[10px] truncate text-muted-foreground">{p.crop_name}</span>
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px]" style={{background:st.bg,color:st.text}}>{p.status}</span>
+                    </div>
+                    <div className="flex gap-3 text-[10px] text-muted-foreground mt-0.5 flex-wrap">
+                      <span>{p.cp_no}</span>
+                      {p.planned_plant_date&&<span>🌱 {fmtDateShort(p.planned_plant_date)}</span>}
+                      {p.required_ready_date&&<span>⏰ Ready {fmtDateShort(p.required_ready_date)}</span>}
+                      {rr>0&&<span style={{color:rStyle.text}}>🌧 {rr}%</span>}
+                    </div>
+                  </div>
+                  {isOpen&&(
+                    <div className="px-4 py-3 border-t border-border bg-card/50 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-[11px]">
+                      {[
+                        ['Field',p.field_code||'—'],['CP No',p.cp_no],['Crop',p.crop_name||'—'],
+                        ['Area',p.area_m2?`${p.area_m2.toLocaleString()} m²`:'—'],
+                        ['Plant Date',fmtDateShort(p.planned_plant_date)],
+                        ['Required Ready',fmtDateShort(p.required_ready_date)],
+                        ['Land Prep',fmtDateShort(p.land_prep_date)],
+                        ['Status',p.status],
+                        ['Rain Risk',rr>0?`${rr}% (${rl})`:'Low'],
+                        ['Priority',prio],
+                      ].map(([l,v])=>(
+                        <div key={l}><div className="text-[10px] text-muted-foreground">{l}</div><div className="font-medium mt-0.5">{v}</div></div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+        </div>
+      </div>
     </div>
+  );
+}
+
+export default function PlanningPage() {
+  return (
+    <Suspense fallback={<div className="p-4 animate-pulse"><div className="h-8 w-48 bg-muted rounded"/></div>}>
+      <PlanningInner />
+    </Suspense>
   );
 }

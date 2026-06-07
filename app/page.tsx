@@ -1,221 +1,200 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
-import { fetchCropPlans, getPlotStatus, type CropPlan } from '@/lib/farmData';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { supabase, type CropPlan, type WeatherForecast, STATUS_COLORS, RISK_COLORS, getRiskLevel, fmtDateShort, daysUntil } from '@/lib/supabase';
 
-interface DayForecast {
-  date: string;
-  dayTh: string;
-  prob: number;
-  mm: number;
-  tMax: number;
-  tMin: number;
-  cls: 'safe' | 'warn' | 'danger';
+interface DashKPI {
+  total: number;
+  preparing: number;
+  ready: number;
+  overdue: number;
+  highRisk: number;
+  upcomingCount: number;
 }
-const CLS_COLOR = { safe: '#155d31', warn: '#a0560a', danger: '#b52b1e' };
+
+interface DayForecast { date: string; dayTh: string; prob: number; mm: number; tMax: number; tMin: number }
+const DAY_TH = ['อา','จ','อ','พ','พฤ','ศ','ส'];
 
 export default function DashboardPage() {
-  const [plans, setPlans] = useState<CropPlan[]>([]);
+  const [kpi, setKpi] = useState<DashKPI>({ total:0, preparing:0, ready:0, overdue:0, highRisk:0, upcomingCount:0 });
+  const [upcoming, setUpcoming] = useState<CropPlan[]>([]);
   const [forecast, setForecast] = useState<DayForecast[]>([]);
   const [loading, setLoading] = useState(true);
-  const YEAR = 2026;
 
   useEffect(() => {
-    Promise.all([
-      fetchCropPlans(),
-      fetch('https://api.open-meteo.com/v1/forecast?latitude=18.7&longitude=98.9&daily=precipitation_probability_max,precipitation_sum,temperature_2m_max,temperature_2m_min&timezone=Asia%2FBangkok&forecast_days=7')
-        .then(r => r.json()).catch(() => null),
-    ]).then(([csv, wx]) => {
-      setPlans(csv);
-      if (wx?.daily) {
-        const d = wx.daily;
-        const DAY_TH = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์'];
-        setForecast((d.time as string[]).map((dt: string, i: number) => {
-          const prob = d.precipitation_probability_max[i] ?? 0;
-          const mm   = Math.round((d.precipitation_sum[i] ?? 0) * 10) / 10;
-          return { date: dt, dayTh: DAY_TH[new Date(dt + 'T00:00:00').getDay()],
-            prob, mm, tMax: Math.round(d.temperature_2m_max[i] ?? 0),
-            tMin: Math.round(d.temperature_2m_min[i] ?? 0),
-            cls: prob >= 70 ? 'danger' : prob >= 40 ? 'warn' : 'safe' };
+    async function load() {
+      const today = new Date().toISOString().split('T')[0];
+      const plus14 = new Date(Date.now()+14*86400000).toISOString().split('T')[0];
+
+      const [{ data: plans }, wxRes] = await Promise.all([
+        supabase.from('crop_plans').select('*').neq('status','Harvested').order('required_ready_date'),
+        fetch('https://api.open-meteo.com/v1/forecast?latitude=18.7&longitude=98.9&daily=precipitation_probability_max,precipitation_sum,temperature_2m_max,temperature_2m_min&timezone=Asia%2FBangkok&forecast_days=7').then(r=>r.json()).catch(()=>null),
+      ]);
+
+      const cp = (plans || []) as CropPlan[];
+      const now = new Date(); now.setHours(0,0,0,0);
+
+      const overduePlans = cp.filter(p => {
+        if (!p.required_ready_date || ['Ready','Planted','Harvested'].includes(p.status)) return false;
+        return new Date(p.required_ready_date+'T00:00:00') < now;
+      });
+
+      let highRiskCount = 0;
+      let wxDays: DayForecast[] = [];
+      if (wxRes?.daily) {
+        const d = wxRes.daily;
+        wxDays = (d.time as string[]).map((dt:string,i:number)=>({
+          date:dt, dayTh:DAY_TH[new Date(dt+'T00:00:00').getDay()],
+          prob:d.precipitation_probability_max[i]??0, mm:Math.round((d.precipitation_sum[i]??0)*10)/10,
+          tMax:Math.round(d.temperature_2m_max[i]??0), tMin:Math.round(d.temperature_2m_min[i]??0),
         }));
+        const highRainDays = wxDays.slice(0,3).filter(d=>d.prob>=60).length;
+        if (highRainDays > 0) {
+          highRiskCount = cp.filter(p => {
+            if (['Ready','Planted','Harvested'].includes(p.status)) return false;
+            if (!p.planned_plant_date) return false;
+            const dl = daysUntil(p.planned_plant_date);
+            return dl !== null && dl >= 0 && dl <= 7;
+          }).length;
+        }
+        setForecast(wxDays);
       }
+
+      const upcomingPlans = cp.filter(p => p.planned_plant_date && p.planned_plant_date >= today && p.planned_plant_date <= plus14)
+        .sort((a,b)=>(a.planned_plant_date||'').localeCompare(b.planned_plant_date||''))
+        .slice(0,8);
+
+      setKpi({
+        total: cp.length,
+        preparing: cp.filter(p=>p.status==='Preparing').length,
+        ready: cp.filter(p=>p.status==='Ready').length,
+        overdue: overduePlans.length,
+        highRisk: highRiskCount,
+        upcomingCount: cp.filter(p=>p.planned_plant_date&&p.planned_plant_date>=today&&p.planned_plant_date<=plus14).length,
+      });
+      setUpcoming(upcomingPlans);
       setLoading(false);
-    });
+    }
+    load();
   }, []);
 
-  const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
-  const yr = useMemo(() => plans.filter(r => r.year === YEAR), [plans]);
-
-  const kpi = useMemo(() => {
-    const total = yr.length;
-    const tilled = yr.filter(r => r.landPrep && new Date(r.landPrep+'T00:00:00') <= today).length;
-    const readyToPlant = yr.filter(r => {
-      const lp = r.landPrep ? new Date(r.landPrep+'T00:00:00') : null;
-      return lp && lp <= today && !r.transplantActual && !r.removalActual;
-    }).length;
-    const rainRisk = yr.filter(r => {
-      if (r.transplantActual || r.removalActual) return false;
-      const tp = r.transplantPlan ? new Date(r.transplantPlan+'T00:00:00') : null;
-      if (!tp) return false;
-      const diff = Math.round((tp.getTime() - today.getTime()) / 86400000);
-      if (diff < 0 || diff > 5) return false;
-      return forecast.slice(0,3).some(d => d.prob >= 60);
-    }).length;
-    return { total, tilled, readyToPlant, rainRisk };
-  }, [yr, today, forecast]);
-
-  const alertDay = forecast.find(d => d.cls === 'danger');
-  const warnDay = !alertDay ? forecast.find(d => d.cls === 'warn') : null;
-
-  const aiRecs = useMemo(() => {
-    const recs: { msg: string; type: 'ok' | 'warn' | 'stop' }[] = [];
-    const rainTomorrow = forecast[1]?.prob >= 60;
-    const noRainNow = !forecast.length || forecast[0].prob < 40;
-
-    const readyNow = yr.filter(r => {
-      if (r.transplantActual || r.removalActual || r.landPrep) return false;
-      const tp = r.transplantPlan ? new Date(r.transplantPlan+'T00:00:00') : null;
-      if (!tp) return false;
-      const diff = Math.round((tp.getTime() - today.getTime()) / 86400000);
-      return diff >= 2 && diff <= 10;
-    });
-    const readyPlot = yr.filter(r => {
-      const lp = r.landPrep ? new Date(r.landPrep+'T00:00:00') : null;
-      return lp && lp <= today && !r.transplantActual && !r.removalActual;
-    });
-    const late = yr.filter(r => {
-      if (r.transplantActual || r.removalActual) return false;
-      const tp = r.transplantPlan ? new Date(r.transplantPlan+'T00:00:00') : null;
-      return tp && tp < today;
-    });
-
-    if (readyNow.length && noRainNow)
-      recs.push({ msg: `เตรียมดินได้เลย — ดินแห้ง ฝนน้อย: ${readyNow.slice(0,5).map(r=>r.plot).join(', ')}${readyNow.length>5?' ...':''}`, type: 'ok' });
-    if (readyPlot.length)
-      recs.push({ msg: `ยกกร่องเสร็จ รอลงกล้า ${readyPlot.length} แปลง: ${readyPlot.slice(0,5).map(r=>r.plot).join(', ')}${readyPlot.length>5?' ...':''}`, type: 'ok' });
-    if (late.length)
-      recs.push({ msg: `ล่าช้า! ${late.length} แปลงเลยวันปลูกแล้ว ควรเร่งดำเนินการ: ${late.slice(0,4).map(r=>r.plot).join(', ')}`, type: 'warn' });
-    if (rainTomorrow)
-      recs.push({ msg: `คาดฝนพรุ่งนี้ (${forecast[1]?.prob}%) — ไม่ควรเริ่มงานในแปลงที่ยังไม่ยกกร่อง`, type: 'stop' });
-    if (!recs.length)
-      recs.push({ msg: 'ทุกแปลงอยู่ในแผนปกติ ไม่มีเหตุเร่งด่วน', type: 'ok' });
-    return recs;
-  }, [yr, today, forecast]);
+  const CLS = (prob:number) => prob>=70?'#b52b1e':prob>=40?'#a0560a':'#155d31';
 
   if (loading) return (
-    <div className="p-4 animate-pulse space-y-3">
-      <div className="grid grid-cols-4 gap-2.5">{[...Array(4)].map((_,i)=><div key={i} className="h-16 bg-muted rounded-lg"/>)}</div>
-      <div className="h-20 bg-muted rounded-lg"/><div className="flex gap-2 overflow-hidden">{[...Array(7)].map((_,i)=><div key={i} className="h-28 w-24 flex-shrink-0 bg-muted rounded-lg"/>)}</div>
-      <div className="h-28 bg-muted rounded-lg"/>
+    <div className="p-4 animate-pulse space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">{[...Array(5)].map((_,i)=><div key={i} className="h-16 bg-muted rounded-lg"/>)}</div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4"><div className="h-48 bg-muted rounded-lg"/><div className="h-48 bg-muted rounded-lg"/></div>
     </div>
   );
 
   return (
-    <div className="p-3 lg:p-4 space-y-4 max-w-3xl mx-auto">
+    <div className="p-4 space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-base font-bold">Executive Dashboard</h1>
+          <p className="text-[11px] text-muted-foreground">Farm Lert Phan 2 — FOMS v1.0</p>
+        </div>
+      </div>
 
-      {/* KPI */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {[
-          { v: kpi.total,        l: 'แปลงทั้งหมด', c: 'text-foreground' },
-          { v: kpi.tilled,       l: 'ยกกร่องแล้ว', c: 'text-[#155d31]' },
-          { v: kpi.readyToPlant, l: 'พร้อมปลูก',   c: 'text-[#155d31]' },
-          { v: kpi.rainRisk,     l: 'เสี่ยงฝน',    c: 'text-[#b52b1e]' },
-        ].map(k => (
-          <div key={k.l} className="bg-card border border-border rounded-lg px-3 py-2.5 text-center">
-            <div className={`text-2xl font-medium ${k.c}`}>{k.v}</div>
+          { l:'Total Plans',     v:kpi.total,         c:'text-foreground',  href:'/crop-plans' },
+          { l:'Preparing',       v:kpi.preparing,      c:'text-sky-500',     href:'/planning' },
+          { l:'Ready',           v:kpi.ready,          c:'text-[#155d31]',   href:'/planning?status=Ready' },
+          { l:'Overdue',         v:kpi.overdue,        c:'text-red-500',     href:'/planning?status=Overdue' },
+          { l:'High Rain Risk',  v:kpi.highRisk,       c:'text-orange-500',  href:'/weather' },
+        ].map(k=>(
+          <Link key={k.l} href={k.href}
+            className="bg-card border border-border rounded-lg px-3 py-2.5 text-center hover:bg-muted/30 transition-colors">
+            <div className={`text-2xl font-semibold ${k.c}`}>{k.v}</div>
             <div className="text-[10px] text-muted-foreground mt-0.5">{k.l}</div>
-          </div>
+          </Link>
         ))}
       </div>
 
-      {/* Alert */}
-      {(alertDay || warnDay) && (() => {
-        const d = alertDay || warnDay!;
-        const isAlert = !!alertDay;
-        return (
-          <div className="rounded-lg px-3 py-2.5" style={{ background:'#fff8f0', border:'0.5px solid #e8960a' }}>
-            <div className="text-[11px] font-medium flex items-center gap-1.5 mb-1" style={{ color:'#6b3600' }}>
-              <span>⚠</span> {isAlert ? 'แจ้งเตือน: ' : 'เตือน: '}ฝน{isAlert?'หนัก':'ปานกลาง'} {d.dayTh}นี้ ({d.prob}% / {d.mm} mm)
-            </div>
-            <div className="text-[10px]" style={{ color:'#7c4500', lineHeight:1.6 }}>
-              {isAlert ? `แนะนำ เร่งเตรียมดินแปลงที่ค้างอยู่ก่อน ${d.dayTh}นี้` : `ติดตามสถานการณ์อย่างใกล้ชิด`}
-            </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Upcoming plantings 14 days */}
+        <div className="bg-card border border-border rounded-lg overflow-hidden">
+          <div className="px-3 py-2 border-b border-border flex items-center justify-between">
+            <div className="text-[12px] font-semibold">🌱 Upcoming Plantings (14 days) — {kpi.upcomingCount} plans</div>
+            <Link href="/planning" className="text-[10px] text-[#155d31]">ดูทั้งหมด →</Link>
           </div>
-        );
-      })()}
-
-      {/* 7-day weather */}
-      <div>
-        <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 mb-2">🌧 พยากรณ์ฝน 7 วัน</div>
-        {forecast.length === 0
-          ? <div className="text-xs text-muted-foreground py-3 text-center">โหลดข้อมูลอากาศไม่ได้</div>
-          : (
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {forecast.map(d => {
-              const col = CLS_COLOR[d.cls];
-              return (
-                <div key={d.date} className="flex-shrink-0 w-[86px] rounded-lg px-2 py-2.5"
-                  style={{ background:'var(--card)', border:`0.5px solid ${col}33`, borderTop:`3px solid ${col}` }}>
-                  <div className="text-[10px] text-muted-foreground">{d.dayTh}</div>
-                  <div className="text-[19px] font-medium mt-0.5" style={{ color: col }}>{d.prob}%</div>
-                  <div className="text-[10px] text-muted-foreground">{d.mm} mm</div>
-                  <div className="text-[9px] text-muted-foreground mt-0.5">{d.tMax}°/{d.tMin}°</div>
-                  <div className="h-1 rounded-full mt-1.5 overflow-hidden bg-border">
-                    <div className="h-full rounded-full" style={{ width:`${Math.min(100,d.prob)}%`, background:col }}/>
+          {upcoming.length === 0
+            ? <div className="py-8 text-center text-[11px] text-muted-foreground">ไม่มีแผนปลูกใน 14 วัน</div>
+            : (
+            <div className="divide-y divide-border">
+              {upcoming.map(p=>{
+                const dl = daysUntil(p.planned_plant_date);
+                const st = STATUS_COLORS[p.status];
+                return (
+                  <div key={p.id} className="flex items-center gap-2 px-3 py-2">
+                    <span className="font-mono text-[11px] font-medium w-20">{p.field_code}</span>
+                    <span className="text-[10px] text-muted-foreground flex-1 truncate">{p.crop_name}</span>
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px]" style={{color:st.text,background:st.bg}}>{p.status}</span>
+                    <span className="text-[10px] font-mono tabular-nums w-16 text-right text-muted-foreground">
+                      {dl!==null ? (dl===0?'วันนี้':dl>0?`อีก ${dl}d`:`เกิน ${-dl}d`) : '—'}
+                    </span>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* 7-day rain */}
+        <div className="bg-card border border-border rounded-lg overflow-hidden">
+          <div className="px-3 py-2 border-b border-border">
+            <div className="text-[12px] font-semibold">🌧 Rain Forecast 7 Days</div>
           </div>
-        )}
-      </div>
-
-      {/* AI recommendations */}
-      <div>
-        <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 mb-2">🤖 AI แนะนำวันนี้</div>
-        <div className="rounded-lg border border-border overflow-hidden bg-card divide-y divide-border">
-          {aiRecs.map((rec, i) => {
-            const ico = rec.type==='ok'?'✓':rec.type==='warn'?'!':'✕';
-            const bg  = rec.type==='ok'?'#e6f3ec':rec.type==='warn'?'#fff3e0':'#fdecea';
-            const col = rec.type==='ok'?'#155d31':rec.type==='warn'?'#a0560a':'#b52b1e';
-            return (
-              <div key={i} className="flex items-start gap-2.5 px-3 py-2.5">
-                <div className="w-6 h-6 rounded-md flex items-center justify-center text-[11px] font-bold flex-shrink-0 mt-0.5"
-                  style={{ background:bg, color:col }}>{ico}</div>
-                <div className="text-[11px] leading-relaxed">{rec.msg}</div>
-              </div>
-            );
-          })}
+          {forecast.length === 0
+            ? <div className="py-8 text-center text-[11px] text-muted-foreground">โหลดข้อมูลอากาศไม่ได้</div>
+            : (
+            <div className="p-3 flex gap-2 overflow-x-auto">
+              {forecast.map(d=>{
+                const col = CLS(d.prob);
+                return (
+                  <div key={d.date} className="flex-shrink-0 w-[78px] rounded-lg px-2 py-2"
+                    style={{border:`1px solid ${col}33`, borderTop:`3px solid ${col}`, background:'var(--card)'}}>
+                    <div className="text-[9px] text-muted-foreground">{d.dayTh}</div>
+                    <div className="text-[17px] font-medium" style={{color:col}}>{d.prob}%</div>
+                    <div className="text-[9px] text-muted-foreground">{d.mm}mm</div>
+                    <div className="text-[9px] text-muted-foreground">{d.tMax}°/{d.tMin}°</div>
+                    {d.prob>=60&&<div className="text-[8px] font-medium mt-0.5" style={{color:'#b52b1e'}}>⚠ HIGH</div>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Status breakdown */}
-      <div>
-        <div className="text-[11px] text-muted-foreground mb-2">สรุปสถานะแปลงปี {YEAR}</div>
-        <div className="rounded-lg border border-border overflow-hidden bg-card divide-y divide-border">
-          {[
-            { l:'เสร็จสิ้น (เก็บเกี่ยวแล้ว)', count: yr.filter(r=>!!r.removalActual).length, c:'#64748b' },
-            { l:'ปลูกแล้ว รออยู่ในแปลง',        count: yr.filter(r=>r.transplantActual&&!r.removalActual).length, c:'#16a34a' },
-            { l:'เตรียมดินแล้ว รอปลูก',          count: yr.filter(r=>{ const lp=r.landPrep?new Date(r.landPrep+'T00:00:00'):null; return lp&&lp<=today&&!r.transplantActual&&!r.removalActual; }).length, c:'#d97706' },
-            { l:'รอเตรียมดิน (มีกำหนดวัน)',       count: yr.filter(r=>{ const lp=r.landPrep?new Date(r.landPrep+'T00:00:00'):null; return lp&&lp>today&&!r.transplantActual&&!r.removalActual; }).length, c:'#0284c7' },
-            { l:'ยังไม่กำหนดวันไถ',               count: yr.filter(r=>!r.landPrep&&!r.transplantActual&&!r.removalActual).length, c:'#8b5cf6' },
-          ].map(s => {
-            const pct = kpi.total > 0 ? Math.round(s.count/kpi.total*100) : 0;
+      {/* Preparation status summary */}
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
+        <div className="px-3 py-2 border-b border-border">
+          <div className="text-[12px] font-semibold">📊 Preparation Status Summary</div>
+        </div>
+        <div className="p-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+          {(['Planned','Preparing','Ready','Planted','Overdue'] as const).map(s=>{
+            const st = STATUS_COLORS[s];
             return (
-              <div key={s.l} className="px-3 py-2 flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background:s.c }}/>
-                <div className="flex-1 text-[11px]">{s.l}</div>
-                <div className="text-[11px] font-medium tabular-nums w-6 text-right">{s.count}</div>
-                <div className="w-20 h-1.5 rounded-full overflow-hidden bg-border">
-                  <div className="h-full rounded-full" style={{ width:`${pct}%`, background:s.c }}/>
+              <Link key={s} href={`/planning?status=${s}`}
+                className="rounded-lg border px-3 py-2 text-center hover:opacity-80 transition-opacity"
+                style={{background:st.bg,borderColor:st.border}}>
+                <div className="text-lg font-semibold" style={{color:st.text}}>
+                  {s==='Planned'?kpi.total-kpi.preparing-kpi.ready-(kpi.overdue)
+                    :s==='Preparing'?kpi.preparing
+                    :s==='Ready'?kpi.ready
+                    :s==='Planted'?'—'
+                    :kpi.overdue}
                 </div>
-                <div className="text-[10px] text-muted-foreground w-7 text-right tabular-nums">{pct}%</div>
-              </div>
+                <div className="text-[10px] mt-0.5" style={{color:st.text}}>{s}</div>
+              </Link>
             );
           })}
         </div>
       </div>
-
     </div>
   );
 }

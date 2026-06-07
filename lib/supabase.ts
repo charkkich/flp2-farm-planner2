@@ -58,3 +58,16 @@ export const STATUS_LABELS: Record<FieldStatus, string> = {
   'Ridging': 'Ridging',
   'Ready For Transplant': 'Ready',
 };
+
+export interface CropPlan {
+  id: string;
+  cp_no: string;
+  crop_name: string;
+  field_code: string;
+  rows_count: number | null;
+  width_m: number | null;
+  planned_plant_date: string | null;
+  actual_plant_date: string | null;
+  remarks: string | null;
+  created_at: string;
+}

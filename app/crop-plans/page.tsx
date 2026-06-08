@@ -63,7 +63,7 @@ export default function CropPlansPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const crops  = useMemo(() => [...new Set(plans.map(p=>p.crop_name).filter((c): c is string => c !== null))].sort(), [plans]);
+  const crops  = useMemo(() => Array.from(new Set(plans.map(p=>p.crop_name).filter((c): c is string => c !== null))).sort(), [plans]);
 
   const filtered = useMemo(() => {
     return plans

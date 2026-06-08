@@ -1,371 +1,203 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { supabase, type CropPlan } from '@/lib/supabase';
+import { supabase, type CropPlan, type Field, type Worker, type Machine, fmtDate, isOverdue } from '@/lib/supabase';
 
-const MONTH_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const COLORS: Record<string,string> = {
+  Planned:'#94a3b8', Preparing:'#f59e0b', Ready:'#22c55e',
+  Planted:'#3b82f6', Harvested:'#a16207', Empty:'#e2e8f0', Overdue:'#ef4444',
+};
+
+function Bar({ pct, color }: { pct: number; color: string }) {
+  return (
+    <div className="flex-1 h-2 bg-muted rounded overflow-hidden">
+      <div className="h-full rounded transition-all" style={{width:`${pct}%`, background: color}}/>
+    </div>
+  );
+}
 
 export default function ReportsPage() {
-  const [plans, setPlans] = useState<CropPlan[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'overview'|'crops'|'calendar'|'accuracy'>('overview');
-  const [year, setYear] = useState(2025);
+  const [plans,    setPlans]    = useState<CropPlan[]>([]);
+  const [fields,   setFields]   = useState<Field[]>([]);
+  const [workers,  setWorkers]  = useState<Worker[]>([]);
+  const [machines, setMachines] = useState<Machine[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [year,     setYear]     = useState(2026);
 
   useEffect(() => {
-    supabase.from('crop_plans').select('*').then(({ data }) => {
-      setPlans(data || []);
+    Promise.all([
+      supabase.from('crop_plans').select('*'),
+      supabase.from('fields').select('*').eq('is_active', true),
+      supabase.from('workers').select('*'),
+      supabase.from('machines').select('*'),
+    ]).then(([{data:cp},{data:f},{data:w},{data:m}]) => {
+      setPlans(cp||[]);
+      setFields(f||[]);
+      setWorkers(w||[]);
+      setMachines(m||[]);
       setLoading(false);
     });
   }, []);
 
-  // ---- KPIs ----
-  const kpi = useMemo(() => {
-    const all = plans.filter(p => p.year === year);
-    const harvested = all.filter(p => p.status === 'Harvested').length;
-    const totalArea = all.reduce((s, p) => s + (p.area_m2 || 0), 0);
-    const harvestedArea = all.filter(p=>p.status==='Harvested').reduce((s,p)=>s+(p.area_m2||0),0);
+  const yPlans = useMemo(() => plans.filter(p => p.year === year), [plans, year]);
 
-    // Plan vs actual accuracy
-    const withActual = all.filter(p => p.planned_plant_date && p.actual_plant_date);
-    const diffs = withActual.map(p => {
-      const pl = new Date(p.planned_plant_date!+'T00:00:00');
-      const ac = new Date(p.actual_plant_date!+'T00:00:00');
-      return Math.round((ac.getTime()-pl.getTime())/86400000);
+  // 1. Field status summary (from crop_plans)
+  const fieldStatusSummary = useMemo(() => {
+    const counts: Record<string,number> = {};
+    fields.forEach(f => {
+      const fp = plans.filter(p => p.field_code === f.field_code && p.status !== 'Harvested');
+      const st = fp.length > 0 ? (isOverdue(fp[0]) ? 'Overdue' : fp[0].status) : 'Empty';
+      counts[st] = (counts[st]||0) + 1;
     });
-    const avgDiff = diffs.length ? Math.round(diffs.reduce((s,d)=>s+d,0)/diffs.length) : 0;
-    const onTime = diffs.filter(d=>Math.abs(d)<=3).length;
-    const early = diffs.filter(d=>d<-3).length;
-    const late = diffs.filter(d=>d>3).length;
+    return Object.entries(counts).sort(([a],[b]) => a.localeCompare(b));
+  }, [fields, plans]);
 
-    return { total: all.length, harvested, totalArea: Math.round(totalArea), harvestedArea: Math.round(harvestedArea),
-      completionRate: all.length ? Math.round(harvested/all.length*100) : 0,
-      avgDiff, onTime, early, late, withActual: withActual.length };
-  }, [plans, year]);
+  // 2. Crop plan summary by status
+  const cpSummary = useMemo(() => {
+    const statuses = ['Planned','Preparing','Ready','Planted','Harvested'] as const;
+    return statuses.map(s => ({
+      status: s,
+      count: yPlans.filter(p => p.status === s).length,
+    }));
+  }, [yPlans]);
 
-  // ---- Crop breakdown ----
-  const cropBreakdown = useMemo(() => {
-    const all = plans.filter(p => p.year === year);
-    const map: Record<string, {count:number;area:number}> = {};
-    all.forEach(p => {
-      const crops = (p.crop_name||'Unknown').split(',').map(c=>c.trim());
-      crops.forEach(crop => {
-        if (!map[crop]) map[crop] = {count:0,area:0};
-        map[crop].count++;
-        map[crop].area += (p.area_m2||0) / crops.length;
-      });
+  // 3. Delayed plans (overdue)
+  const delayed = useMemo(() =>
+    yPlans
+      .filter(p => isOverdue(p))
+      .sort((a,b) => (a.required_ready_date||'').localeCompare(b.required_ready_date||'')),
+  [yPlans]);
+
+  // 4. Machine utilization
+  const machineUtil = useMemo(() => {
+    const statusCount: Record<string,number> = { Available:0, Working:0, Maintenance:0 };
+    machines.filter(m=>m.is_active!==false).forEach(m => {
+      const s = m.status || 'Available';
+      statusCount[s] = (statusCount[s]||0) + 1;
     });
-    return Object.entries(map)
-      .map(([name,v])=>({name,count:v.count,area:Math.round(v.area)}))
-      .sort((a,b)=>b.area-a.area)
-      .slice(0,12);
-  }, [plans, year]);
+    return statusCount;
+  }, [machines]);
 
-  // ---- Monthly calendar (planting count per month) ----
-  const monthlyPlanned = useMemo(() => {
-    return Array.from({length:12},(_,i)=>{
-      const cnt = plans.filter(p=>p.year===year && p.planned_plant_date && new Date(p.planned_plant_date+'T00:00:00').getMonth()===i).length;
-      return {month:i,count:cnt};
-    });
-  }, [plans, year]);
-
-  // ---- Year comparison ----
-  const yearSummary = useMemo(() => {
-    return [2023,2024,2025,2026].map(y => {
-      const all = plans.filter(p=>p.year===y);
-      const harvested = all.filter(p=>p.status==='Harvested').length;
-      const area = Math.round(all.reduce((s,p)=>s+(p.area_m2||0),0));
-      return {year:y, count:all.length, harvested, area};
-    });
-  }, [plans]);
-
-  // ---- Accuracy histogram ----
-  const accuracyBuckets = useMemo(()=>{
-    const all = plans.filter(p=>p.year===year&&p.planned_plant_date&&p.actual_plant_date);
-    const buckets:{label:string;count:number;color:string}[] = [
-      {label:'≤-7d',count:0,color:'#3b82f6'},
-      {label:'-6 to -4',count:0,color:'#60a5fa'},
-      {label:'-3 to 0',count:0,color:'#22c55e'},
-      {label:'+1 to +3',count:0,color:'#84cc16'},
-      {label:'+4 to +7',count:0,color:'#f59e0b'},
-      {label:'≥+8d',count:0,color:'#ef4444'},
-    ];
-    all.forEach(p=>{
-      const d = Math.round((new Date(p.actual_plant_date!+'T00:00:00').getTime()-new Date(p.planned_plant_date!+'T00:00:00').getTime())/86400000);
-      if(d<=-7) buckets[0].count++;
-      else if(d<=-4) buckets[1].count++;
-      else if(d<=0) buckets[2].count++;
-      else if(d<=3) buckets[3].count++;
-      else if(d<=7) buckets[4].count++;
-      else buckets[5].count++;
-    });
-    return buckets;
-  },[plans,year]);
-
-  const maxMonthly = Math.max(...monthlyPlanned.map(m=>m.count),1);
-  const maxCropArea = Math.max(...cropBreakdown.map(c=>c.area),1);
-  const maxAccuracy = Math.max(...accuracyBuckets.map(b=>b.count),1);
-
-  const YEAR_COLORS: Record<number,string> = {2023:'#94a3b8',2024:'#60a5fa',2025:'#22c55e',2026:'#f59e0b'};
+  const totalFields = fields.length || 1;
+  const totalCP     = yPlans.length || 1;
 
   if (loading) return (
     <div className="p-4 animate-pulse space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">{[...Array(4)].map((_,i)=><div key={i} className="h-16 bg-muted rounded-lg"/>)}</div>
-      <div className="h-48 bg-muted rounded-lg"/>
+      {[...Array(4)].map((_,i)=><div key={i} className="h-40 bg-muted rounded-lg"/>)}
     </div>
   );
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-4 space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-base font-bold">Reports & KPI</h1>
-          <p className="text-[11px] text-muted-foreground">Farm Lert Phan 2 · {plans.length.toLocaleString()} total records</p>
+          <h1 className="text-base font-bold">Reports</h1>
+          <p className="text-[11px] text-muted-foreground">Summary view · {fields.length} fields · {yPlans.length} crop plans ({year})</p>
         </div>
         <div className="flex gap-1">
-          {[2023,2024,2025,2026].map(y=>(
-            <button key={y} onClick={()=>setYear(y)}
-              className={['px-2.5 py-1 rounded text-[11px] font-medium border',y===year?'bg-[#155d31] text-white border-[#155d31]':'border-border text-muted-foreground'].join(' ')}>
+          {[2026,2025,2024,2023].map(y => (
+            <button key={y} onClick={() => setYear(y)}
+              className={['px-2.5 py-1 rounded text-[11px] border',
+                y===year?'bg-[#155d31] text-white border-[#155d31]':'border-border text-muted-foreground'].join(' ')}>
               {y}
             </button>
           ))}
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          {l:'Total Plans',v:kpi.total,c:'text-foreground'},
-          {l:'Harvested',v:kpi.harvested,c:'text-muted-foreground'},
-          {l:'Completion',v:`${kpi.completionRate}%`,c:'text-[#155d31]'},
-          {l:'Total Area',v:`${(kpi.totalArea/10000).toFixed(1)} ha`,c:'text-sky-500'},
-        ].map(k=>(
-          <div key={k.l} className="bg-card border border-border rounded-lg px-3 py-2.5 text-center">
-            <div className={`text-xl font-semibold ${k.c}`}>{k.v}</div>
-            <div className="text-[10px] text-muted-foreground mt-0.5">{k.l}</div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* 1. Field Status Summary */}
+        <div className="bg-card border border-border rounded-lg p-4">
+          <div className="text-[12px] font-semibold mb-3">Field Status Summary</div>
+          <div className="space-y-2">
+            {fieldStatusSummary.map(([status, count]) => (
+              <div key={status} className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background: COLORS[status]||'#94a3b8'}}/>
+                <div className="w-20 text-[11px]">{status}</div>
+                <Bar pct={Math.round(count/totalFields*100)} color={COLORS[status]||'#94a3b8'}/>
+                <div className="text-[11px] font-semibold w-8 text-right">{count}</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-border">
-        {([['overview','📊 Overview'],['crops','🌿 Crops'],['calendar','📅 Calendar'],['accuracy','🎯 Accuracy']] as const).map(([k,l])=>(
-          <button key={k} onClick={()=>setTab(k)}
-            className={['px-3 py-2 text-[11px] font-medium border-b-2 -mb-px transition-colors',
-              tab===k?'border-[#155d31] text-[#155d31]':'border-transparent text-muted-foreground hover:text-foreground'].join(' ')}>
-            {l}
-          </button>
-        ))}
-      </div>
+        {/* 2. Crop Plan Summary */}
+        <div className="bg-card border border-border rounded-lg p-4">
+          <div className="text-[12px] font-semibold mb-3">Crop Plan Summary — {year}</div>
+          <div className="space-y-2">
+            {cpSummary.map(({status, count}) => (
+              <div key={status} className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background: COLORS[status]}}/>
+                <div className="w-20 text-[11px]">{status}</div>
+                <Bar pct={Math.round(count/totalCP*100)} color={COLORS[status]}/>
+                <div className="text-[11px] font-semibold w-8 text-right">{count}</div>
+              </div>
+            ))}
+            <div className="pt-2 border-t border-border flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-red-500"/>
+              <div className="w-20 text-[11px]">Overdue</div>
+              <Bar pct={Math.round(delayed.length/totalCP*100)} color="#ef4444"/>
+              <div className="text-[11px] font-bold text-red-600 w-8 text-right">{delayed.length}</div>
+            </div>
+          </div>
+        </div>
 
-      {/* TAB: Overview */}
-      {tab==='overview'&&(
-        <div className="space-y-4">
-          {/* Year comparison */}
-          <div className="bg-card border border-border rounded-lg overflow-hidden">
-            <div className="px-3 py-2 border-b border-border text-[11px] font-semibold">Year Over Year Comparison</div>
-            <div className="p-3 space-y-2">
-              {yearSummary.map(y=>{
-                const maxCount = Math.max(...yearSummary.map(s=>s.count),1);
+        {/* 3. Delayed Fields */}
+        <div className="bg-card border border-border rounded-lg p-4">
+          <div className="text-[12px] font-semibold mb-3 flex items-center gap-2">
+            <span className="text-red-600">⚠ Delayed Fields</span>
+            <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-bold">{delayed.length}</span>
+          </div>
+          {delayed.length === 0 ? (
+            <div className="text-[11px] text-green-600 font-medium text-center py-6">✓ No delayed fields</div>
+          ) : (
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {delayed.map(p => {
+                const dl = Math.abs(Math.round(
+                  (new Date().setHours(0,0,0,0) - new Date(p.required_ready_date!+'T00:00:00').getTime()) / 86400000
+                ));
                 return (
-                  <div key={y.year} className="flex items-center gap-2">
-                    <div className="w-10 text-[11px] font-medium">{y.year}</div>
-                    <div className="flex-1 h-5 bg-muted rounded overflow-hidden">
-                      <div className="h-full rounded flex items-center px-2"
-                        style={{width:`${Math.round(y.count/maxCount*100)}%`,background:YEAR_COLORS[y.year]}}>
-                        <span className="text-[9px] font-medium text-white/90 truncate">{y.count} plans</span>
-                      </div>
-                    </div>
-                    <div className="w-20 text-right text-[10px] text-muted-foreground">
-                      {y.harvested}/{y.count}
-                    </div>
-                    <div className="w-20 text-right text-[10px] text-muted-foreground">
-                      {(y.area/10000).toFixed(1)} ha
-                    </div>
+                  <div key={p.id} className="flex items-center gap-2 text-[11px] bg-red-50/60 rounded px-2 py-1.5">
+                    <span className="font-mono font-bold w-16">{p.field_code}</span>
+                    <span className="flex-1 text-muted-foreground truncate">{p.crop_name}</span>
+                    <span className="text-red-600 font-semibold text-[10px]">{dl}d late</span>
+                    <span className="text-[9px] text-muted-foreground">{fmtDate(p.required_ready_date)}</span>
                   </div>
                 );
               })}
             </div>
-          </div>
-
-          {/* Plan vs Actual summary */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              {l:'Avg Deviation',v:`${kpi.avgDiff>0?'+':''}${kpi.avgDiff}d`,c:Math.abs(kpi.avgDiff)<=3?'text-[#155d31]':'text-amber-500'},
-              {l:'On Time (±3d)',v:`${kpi.withActual?Math.round(kpi.onTime/kpi.withActual*100):0}%`,c:'text-[#155d31]'},
-              {l:'Early (>3d)',v:kpi.early,c:'text-sky-500'},
-              {l:'Late (>3d)',v:kpi.late,c:'text-red-500'},
-            ].map(k=>(
-              <div key={k.l} className="bg-card border border-border rounded-lg px-3 py-2.5 text-center">
-                <div className={`text-xl font-semibold ${k.c}`}>{k.v}</div>
-                <div className="text-[10px] text-muted-foreground mt-0.5">{k.l}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Status breakdown */}
-          <div className="bg-card border border-border rounded-lg overflow-hidden">
-            <div className="px-3 py-2 border-b border-border text-[11px] font-semibold">Status Breakdown — {year}</div>
-            <div className="p-3">
-              {(() => {
-                const all = plans.filter(p=>p.year===year);
-                const groups = [
-                  {s:'Harvested',c:'#475569',bg:'#f1f5f9'},
-                  {s:'Planted',c:'#065f46',bg:'#d1fae5'},
-                  {s:'Ready',c:'#15803d',bg:'#dcfce7'},
-                  {s:'Preparing',c:'#0369a1',bg:'#e0f2fe'},
-                  {s:'Planned',c:'#7c3aed',bg:'#ede9fe'},
-                ];
-                return groups.map(g=>{
-                  const cnt = all.filter(p=>p.status===g.s).length;
-                  const pct = all.length ? Math.round(cnt/all.length*100) : 0;
-                  return (
-                    <div key={g.s} className="flex items-center gap-2 mb-1.5">
-                      <div className="w-20 text-[10px]" style={{color:g.c}}>{g.s}</div>
-                      <div className="flex-1 h-4 bg-muted rounded overflow-hidden">
-                        <div className="h-full rounded" style={{width:`${pct}%`,background:g.bg,border:`1px solid ${g.c}33`}}/>
-                      </div>
-                      <div className="w-14 text-right text-[10px] text-muted-foreground">{cnt} ({pct}%)</div>
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          </div>
+          )}
         </div>
-      )}
 
-      {/* TAB: Crops */}
-      {tab==='crops'&&(
-        <div className="bg-card border border-border rounded-lg overflow-hidden">
-          <div className="px-3 py-2 border-b border-border text-[11px] font-semibold">Top Crops by Area — {year}</div>
-          <div className="p-3 space-y-2">
-            {cropBreakdown.map((c,i)=>(
-              <div key={c.name} className="flex items-center gap-2">
-                <div className="w-4 text-[10px] text-muted-foreground">{i+1}</div>
-                <div className="w-36 text-[11px] truncate">{c.name}</div>
-                <div className="flex-1 h-5 bg-muted rounded overflow-hidden">
-                  <div className="h-full rounded flex items-center px-1.5"
-                    style={{width:`${Math.round(c.area/maxCropArea*100)}%`,background:'#155d3133',border:'0.5px solid #155d31'}}>
-                    <span className="text-[9px] text-[#155d31] font-medium truncate">{c.area.toLocaleString()} m²</span>
-                  </div>
+        {/* 4. Machine & Worker Summary */}
+        <div className="bg-card border border-border rounded-lg p-4">
+          <div className="text-[12px] font-semibold mb-3">Machine & Worker Summary</div>
+          <div className="space-y-1 mb-4">
+            {Object.entries(machineUtil).map(([s, n]) => {
+              const col = s==='Available'?'#22c55e':s==='Working'?'#3b82f6':'#f59e0b';
+              return (
+                <div key={s} className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background:col}}/>
+                  <div className="w-24 text-[11px]">{s}</div>
+                  <Bar pct={machines.length ? Math.round(n/machines.length*100) : 0} color={col}/>
+                  <div className="text-[11px] font-semibold w-6 text-right">{n}</div>
                 </div>
-                <div className="w-12 text-right text-[10px] text-muted-foreground">{c.count}×</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-        </div>
-      )}
-
-      {/* TAB: Calendar */}
-      {tab==='calendar'&&(
-        <div className="space-y-4">
-          <div className="bg-card border border-border rounded-lg overflow-hidden">
-            <div className="px-3 py-2 border-b border-border text-[11px] font-semibold">Monthly Planting Count — {year}</div>
-            <div className="p-3 space-y-1.5">
-              {monthlyPlanned.map(m=>(
-                <div key={m.month} className="flex items-center gap-2">
-                  <div className="w-10 text-[11px] text-muted-foreground">{MONTH_TH[m.month]}</div>
-                  <div className="flex-1 h-5 bg-muted rounded overflow-hidden">
-                    {m.count>0&&<div className="h-full rounded flex items-center px-1.5"
-                      style={{width:`${Math.round(m.count/maxMonthly*100)}%`,background:'#0369a1',}}>
-                      <span className="text-[9px] text-white font-medium">{m.count}</span>
-                    </div>}
-                  </div>
-                  <div className="w-10 text-right text-[10px] text-muted-foreground">{m.count}</div>
-                </div>
-              ))}
+          <div className="pt-3 border-t border-border grid grid-cols-2 gap-3">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-[#155d31]">{workers.filter(w=>w.is_active!==false).length}</div>
+              <div className="text-[10px] text-muted-foreground">Active Workers</div>
             </div>
-          </div>
-
-          {/* All-years heatmap */}
-          <div className="bg-card border border-border rounded-lg overflow-hidden">
-            <div className="px-3 py-2 border-b border-border text-[11px] font-semibold">Multi-Year Monthly Heatmap</div>
-            <div className="p-3 overflow-x-auto">
-              <table className="text-[10px] w-full">
-                <thead>
-                  <tr>
-                    <th className="text-left pr-2 text-muted-foreground font-normal w-12">Year</th>
-                    {MONTH_TH.map(m=><th key={m} className="text-center text-muted-foreground font-normal px-0.5 w-8">{m}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {[2023,2024,2025,2026].map(y=>(
-                    <tr key={y}>
-                      <td className="pr-2 font-medium py-1" style={{color:YEAR_COLORS[y]}}>{y}</td>
-                      {Array.from({length:12},(_,i)=>{
-                        const cnt = plans.filter(p=>p.year===y&&p.planned_plant_date&&new Date(p.planned_plant_date+'T00:00:00').getMonth()===i).length;
-                        const intensity = Math.min(1, cnt/30);
-                        return (
-                          <td key={i} className="px-0.5 py-1 text-center">
-                            <div className="w-7 h-6 rounded text-center flex items-center justify-center text-[9px] font-medium mx-auto"
-                              style={{background:cnt>0?`rgba(21,93,49,${0.1+intensity*0.8})`:'transparent',color:cnt>0?'white':'transparent'}}>
-                              {cnt||''}
-                            </div>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-[#155d31]">{machines.filter(m=>m.is_active!==false).length}</div>
+              <div className="text-[10px] text-muted-foreground">Active Machines</div>
             </div>
           </div>
         </div>
-      )}
-
-      {/* TAB: Accuracy */}
-      {tab==='accuracy'&&(
-        <div className="space-y-4">
-          <div className="bg-card border border-border rounded-lg overflow-hidden">
-            <div className="px-3 py-2 border-b border-border text-[11px] font-semibold">
-              Planting Date Accuracy — {year}
-              <span className="text-muted-foreground font-normal ml-1">({kpi.withActual} records with actual date)</span>
-            </div>
-            <div className="p-3 space-y-2">
-              {accuracyBuckets.map(b=>(
-                <div key={b.label} className="flex items-center gap-2">
-                  <div className="w-16 text-[11px] text-center font-mono">{b.label}</div>
-                  <div className="flex-1 h-6 bg-muted rounded overflow-hidden">
-                    {b.count>0&&<div className="h-full rounded flex items-center px-1.5"
-                      style={{width:`${Math.round(b.count/maxAccuracy*100)}%`,background:b.color}}>
-                      <span className="text-[10px] text-white font-medium">{b.count}</span>
-                    </div>}
-                  </div>
-                  <div className="w-16 text-right text-[10px] text-muted-foreground">
-                    {kpi.withActual?Math.round(b.count/kpi.withActual*100):0}%
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="px-3 pb-3 text-[10px] text-muted-foreground">
-              Negative = planted early | Positive = planted late | ±3 days = On Time
-            </div>
-          </div>
-
-          {/* Top late fields */}
-          <div className="bg-card border border-border rounded-lg overflow-hidden">
-            <div className="px-3 py-2 border-b border-border text-[11px] font-semibold">Most Delayed Plans ({year})</div>
-            <div className="divide-y divide-border">
-              {plans
-                .filter(p=>p.year===year&&p.planned_plant_date&&p.actual_plant_date)
-                .map(p=>({...p,diff:Math.round((new Date(p.actual_plant_date!+'T00:00:00').getTime()-new Date(p.planned_plant_date!+'T00:00:00').getTime())/86400000)}))
-                .sort((a,b)=>b.diff-a.diff)
-                .slice(0,8)
-                .map(p=>(
-                  <div key={p.id} className="flex items-center gap-2 px-3 py-1.5 text-[11px]">
-                    <span className="font-mono w-16 font-semibold">{p.field_code}</span>
-                    <span className="flex-1 truncate text-muted-foreground">{p.crop_name}</span>
-                    <span className="font-mono tabular-nums" style={{color:(p as any).diff>0?'#dc2626':'#15803d'}}>
-                      {(p as any).diff>0?'+':''}{(p as any).diff}d
-                    </span>
-                  </div>
-                ))
-              }
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

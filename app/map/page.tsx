@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { supabase, type CropPlan, type Field, STATUS_COLORS } from '@/lib/supabase';
 
-// Zone prefixes → approximate offsets from farm center (18.7, 98.9)
+// Zone prefixes → approximate offsets from farm center (18.992, 98.972)
 const ZONE_CONFIG: Record<string, { latOff: number; lngOff: number; color: string; label: string }> = {
   T:    { latOff:  0.012, lngOff: -0.030, color: '#0369a1', label: 'T Zone' },
   SS:   { latOff:  0.008, lngOff: -0.015, color: '#7c3aed', label: 'SS Zone' },
@@ -86,7 +86,7 @@ export default function MapPage() {
         shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
       });
 
-      const map = L.map(mapRef.current!, {zoomControl:true}).setView([18.700, 98.900], 14);
+      const map = L.map(mapRef.current!, {zoomControl:true}).setView([18.992, 98.972], 14);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
         attribution:'© OpenStreetMap',maxZoom:19,
       }).addTo(map);
@@ -94,7 +94,7 @@ export default function MapPage() {
       leafletMapRef.current = map;
 
       // Add farm center marker
-      L.marker([18.700, 98.900], {
+      L.marker([18.992, 98.972], {
         icon: L.divIcon({
           html:`<div style="background:#155d31;color:white;padding:3px 6px;border-radius:4px;font-size:10px;font-weight:bold;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.3)">FLP2 Farm</div>`,
           className:'', iconAnchor:[30,10],
@@ -114,8 +114,8 @@ export default function MapPage() {
         const seed = f.field_code.charCodeAt(0)*13 + (f.field_code.charCodeAt(1)||0)*7;
         const jLat = ((seed * 17) % 100 - 50) * 0.0001;
         const jLng = ((seed * 31) % 100 - 50) * 0.0001;
-        const lat = 18.700 + zc.latOff + jLat;
-        const lng = 98.900 + zc.lngOff + jLng;
+        const lat = 18.992 + zc.latOff + jLat;
+        const lng = 98.972 + zc.lngOff + jLng;
 
         const marker = L.circleMarker([lat, lng], {
           radius: Math.max(4, Math.min(9, Math.sqrt((f.area_m2||500)/150))),

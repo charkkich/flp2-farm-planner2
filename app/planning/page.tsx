@@ -37,25 +37,29 @@ function PlanningInner() {
 
   const today = useMemo(()=>{ const d=new Date();d.setHours(0,0,0,0);return d; },[]);
 
-  const filtered = useMemo(()=>plans
-    .map(p=>({...p, status: (!['Ready','Planted','Harvested'].includes(p.status)&&p.required_ready_date&&new Date(p.required_ready_date+'T00:00:00')<today) ? 'Overdue' as unknown as typeof p.status : p.status}))
-    .filter(p=>{
-      if (p.year!==year) return false;
-      if (p.status==='Harvested') return false;
-      if (statusFilter!=='all'&&p.status!==statusFilter) return false;
-      if (search) {
-        const q=search.toLowerCase();
-        return (p.cp_no||'').toLowerCase().includes(q)||(p.field_code||'').toLowerCase().includes(q)||(p.crop_name||'').toLowerCase().includes(q);
-      }
-      return true;
-    })
-    .sort((a,b)=>{
-      const pa=a.status==='Overdue'?0:a.status==='Preparing'?1:a.status==='Planned'?2:3;
-      const pb=b.status==='Overdue'?0:b.status==='Preparing'?1:b.status==='Planned'?2:3;
-      if(pa!==pb) return pa-pb;
-      return (a.required_ready_date||'9999')<(b.required_ready_date||'9999')?-1:1;
-    }),
-  [plans,year,statusFilter,search,today]);
+  const filtered = useMemo(()=>{
+    const ov = (p: CropPlan) => !['Ready','Planted','Harvested'].includes(p.status)&&!!p.required_ready_date&&new Date(p.required_ready_date+'T00:00:00')<today;
+    const eff = (p: CropPlan) => ov(p) ? 'Overdue' : p.status;
+    return plans
+      .filter(p=>{
+        if (p.year!==year) return false;
+        if (p.status==='Harvested') return false;
+        const es = eff(p);
+        if (statusFilter!=='all'&&es!==statusFilter) return false;
+        if (search) {
+          const q=search.toLowerCase();
+          return (p.cp_no||'').toLowerCase().includes(q)||(p.field_code||'').toLowerCase().includes(q)||(p.crop_name||'').toLowerCase().includes(q);
+        }
+        return true;
+      })
+      .map(p=>({...p, _ov: ov(p), _eff: eff(p)}))
+      .sort((a,b)=>{
+        const pa=a._eff==='Overdue'?0:a.status==='Preparing'?1:a.status==='Planned'?2:3;
+        const pb=b._eff==='Overdue'?0:b.status==='Preparing'?1:b.status==='Planned'?2:3;
+        if(pa!==pb) return pa-pb;
+        return (a.required_ready_date||'9999')<(b.required_ready_date||'9999')?-1:1;
+      });
+  },[plans,year,statusFilter,search,today]);
 
   // Rain risk for a plan's plant date
   function rainRisk(p: CropPlan): number {
@@ -84,7 +88,7 @@ function PlanningInner() {
           <h1 className="text-base font-bold">Preparation Planning</h1>
           <p className="text-[11px] text-muted-foreground">
             {filtered.length} plans · 
-            <span className="text-red-500 mx-1">{filtered.filter(p=>p.status==='Overdue').length} overdue</span>·
+            <span className="text-red-500 mx-1">{filtered.filter(p=>p._eff==='Overdue').length} overdue</span>·
             <span className="text-amber-500 mx-1">{filtered.filter(p=>{ const dl=daysUntil(p.required_ready_date); return dl!==null&&dl>=0&&dl<=7&&p.status!=='Ready'; }).length} at risk</span>
           </p>
         </div>
@@ -112,7 +116,7 @@ function PlanningInner() {
           className="h-7 px-2.5 rounded border border-border bg-card text-[11px] w-52 focus:outline-none focus:ring-1 focus:ring-[#155d31]"/>
         <div className="flex gap-1 flex-wrap">
           {STATUS_OPTS.map(s=>{
-            const cnt = s==='all'?filtered.length:filtered.filter(p=>p.status===s).length;
+            const cnt = s==='all'?filtered.length:filtered.filter(p=>p._eff===s).length;
             return (
               <button key={s} onClick={()=>setStatusFilter(s)}
                 className={['px-2 py-1 rounded text-[10px] border',statusFilter===s?'bg-[#155d31] text-white border-[#155d31]':'border-border text-muted-foreground'].join(' ')}>
@@ -136,7 +140,7 @@ function PlanningInner() {
             ? <div className="py-10 text-center text-muted-foreground">No plans</div>
             : filtered.map(p=>{
               const rowBg = getPlanRowColor(p);
-              const st = STATUS_COLORS[p.status]||STATUS_COLORS['Planned'];
+              const st = STATUS_COLORS[p._ov?'Planned':p.status]||STATUS_COLORS['Planned'];
               const dl = daysUntil(p.required_ready_date);
               const rr = rainRisk(p);
               const rl = getRiskLevel(rr);
@@ -158,7 +162,7 @@ function PlanningInner() {
                     <div className={dl!==null&&dl<0?'text-red-500 font-semibold':dl!==null&&dl<=7?'text-amber-500 font-medium':''}>
                       {dl!==null?(dl===0?'Today':dl>0?`${dl}d`:`${-dl}d OV`):'—'}
                     </div>
-                    <div><span className="px-1.5 py-0.5 rounded-full text-[10px]" style={{background:st.bg,color:st.text}}>{p.status}</span></div>
+                    <div><span className="px-1.5 py-0.5 rounded-full text-[10px]" style={{background:st.bg,color:st.text}}>{p._eff||p.status}</span></div>
                     <div>{rr>0?<span className="px-1.5 py-0.5 rounded-full text-[10px]" style={{background:rStyle.bg,color:rStyle.text}}>{rr}%</span>:<span className="text-muted-foreground">—</span>}</div>
                     <div><span className="px-1.5 py-0.5 rounded-full text-[10px]" style={{background:prioStyle.bg,color:prioStyle.text}}>{prio}</span></div>
                   </div>
@@ -168,7 +172,7 @@ function PlanningInner() {
                     <div className="flex items-center gap-2">
                       <span className="font-mono font-semibold text-[12px]">{p.field_code}</span>
                       <span className="flex-1 text-[10px] truncate text-muted-foreground">{p.crop_name}</span>
-                      <span className="px-1.5 py-0.5 rounded-full text-[10px]" style={{background:st.bg,color:st.text}}>{p.status}</span>
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px]" style={{background:st.bg,color:st.text}}>{p._eff||p.status}</span>
                     </div>
                     <div className="flex gap-3 text-[10px] text-muted-foreground mt-0.5 flex-wrap">
                       <span>{p.cp_no}</span>
@@ -185,7 +189,7 @@ function PlanningInner() {
                         ['Plant Date',fmtDateShort(p.planned_plant_date)],
                         ['Required Ready',fmtDateShort(p.required_ready_date)],
                         ['Land Prep',fmtDateShort(p.land_prep_date)],
-                        ['Status',p.status],
+                        ['Status',p._eff||p.status],
                         ['Rain Risk',rr>0?`${rr}% (${rl})`:'Low'],
                         ['Priority',prio],
                       ].map(([l,v])=>(

@@ -38,11 +38,7 @@ function PlanningInner() {
   const today = useMemo(()=>{ const d=new Date();d.setHours(0,0,0,0);return d; },[]);
 
   const filtered = useMemo(()=>plans
-    .map(p=>{
-      if (!['Ready','Planted','Harvested'].includes(p.status)&&p.required_ready_date&&new Date(p.required_ready_date+'T00:00:00')<today)
-        return {...p,status:'Overdue' as const};
-      return p;
-    })
+    .map(p=>({...p, status: (!['Ready','Planted','Harvested'].includes(p.status)&&p.required_ready_date&&new Date(p.required_ready_date+'T00:00:00')<today) ? 'Overdue' as unknown as typeof p.status : p.status}))
     .filter(p=>{
       if (p.year!==year) return false;
       if (p.status==='Harvested') return false;

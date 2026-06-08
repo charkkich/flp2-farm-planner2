@@ -19,7 +19,7 @@ export default function CropPlansPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from('crop_plans').select('*').order('required_ready_date',{nullsLast:true});
+    const { data } = await supabase.from('crop_plans').select('*').order('required_ready_date', { ascending: true, nullsFirst: false });
     setPlans(data || []);
     setLoading(false);
   }, []);

@@ -19,7 +19,7 @@ function PlanningInner() {
 
   const load = useCallback(async () => {
     const [{ data: cp }, wxRes] = await Promise.all([
-      supabase.from('crop_plans').select('*').order('required_ready_date',{nullsLast:true}),
+      supabase.from('crop_plans').select('*').order('required_ready_date', { ascending: true, nullsFirst: false }),
       fetch('https://api.open-meteo.com/v1/forecast?latitude=18.7&longitude=98.9&daily=precipitation_probability_max&timezone=Asia%2FBangkok&forecast_days=14').then(r=>r.json()).catch(()=>null),
     ]);
     setPlans(cp||[]);

@@ -41,7 +41,7 @@ export default function MapPage() {
   useEffect(() => {
     Promise.all([
       supabase.from('fields').select('*').order('field_code'),
-      supabase.from('crop_plans').select('*').order('required_ready_date', {nullsLast:true}),
+      supabase.from('crop_plans').select('*').order('required_ready_date', { ascending: true, nullsFirst: false }),
     ]).then(([{data:f},{data:cp}]) => {
       setFields(f||[]);
       setPlans(cp||[]);

@@ -188,7 +188,6 @@ function PlanningInner() {
                         ['Area',p.area_m2?`${p.area_m2.toLocaleString()} m²`:'—'],
                         ['Plant Date',fmtDateShort(p.planned_plant_date)],
                         ['Required Ready',fmtDateShort(p.required_ready_date)],
-                        ['Land Prep',fmtDateShort(p.land_prep_date)],
                         ['Status',p._eff||p.status],
                         ['Rain Risk',rr>0?`${rr}% (${rl})`:'Low'],
                         ['Priority',prio],

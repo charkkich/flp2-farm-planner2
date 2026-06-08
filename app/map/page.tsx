@@ -61,7 +61,7 @@ export default function MapPage() {
         map[f.field_code] = {status:'Empty',crop:'—',cpNo:'—',plan:null};
       } else {
         const active = fp.find(p=>!['Harvested'].includes(p.status)) || fp[fp.length-1];
-        let status = active.status;
+        let status: string = active.status;
         if (!['Ready','Planted','Harvested'].includes(status) && active.required_ready_date) {
           if (new Date(active.required_ready_date+'T00:00:00') < today) status = 'Overdue';
         }

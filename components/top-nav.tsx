@@ -2,22 +2,31 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-
-const NAV = [
-  { href: '/',            label: 'Dashboard',  icon: '⊞' },
-  { href: '/fields',      label: 'Fields',     icon: '⊡' },
-  { href: '/crop-plans',  label: 'Crop Plans', icon: '📋' },
-  { href: '/planning',    label: 'Planning',   icon: '📅' },
-  { href: '/workers',     label: 'Workers',    icon: '👷' },
-  { href: '/machines',    label: 'Machines',   icon: '🚜' },
-  { href: '/weather',     label: 'Weather',    icon: '🌧' },
-  { href: '/map',         label: 'Map',        icon: '🗺' },
-  { href: '/reports',     label: 'Reports',    icon: '📊' },
-];
+import { useLang, useTheme } from '@/components/providers';
+import { translations } from '@/lib/i18n';
 
 export function TopNav() {
   const pathname = usePathname();
-  const today = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+  const { lang, setLang } = useLang();
+  const { theme, setTheme } = useTheme();
+  const n = translations[lang].nav;
+
+  const today = new Date().toLocaleDateString(lang === 'th' ? 'th-TH' : 'en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  });
+
+  const NAV = [
+    { href: '/',            label: n.dashboard,   icon: '⊞' },
+    { href: '/fields',      label: n.fields,      icon: '⊡' },
+    { href: '/crop-plans',  label: n.cropPlans,   icon: '📋' },
+    { href: '/planning',    label: n.planning,    icon: '📅' },
+    { href: '/work-orders', label: n.workOrders,  icon: '🔧' },
+    { href: '/workers',     label: n.workers,     icon: '👷' },
+    { href: '/machines',    label: n.machines,    icon: '🚜' },
+    { href: '/weather',     label: n.weather,     icon: '🌧' },
+    { href: '/map',         label: n.map,         icon: '🗺' },
+    { href: '/reports',     label: n.reports,     icon: '📊' },
+  ];
 
   return (
     <header className="flex-shrink-0 border-b border-border bg-card">
@@ -28,9 +37,26 @@ export function TopNav() {
         </div>
         <div>
           <div className="text-[13px] font-semibold text-white leading-tight">FLP2 Operation Center</div>
-          <div className="text-[10px] text-white/70 leading-tight">Farm Lert Phan 2 · FOMS v1.0 · {today}</div>
+          <div className="text-[10px] text-white/70 leading-tight">Farm Lert Phan 2 · FOMS v2.0 · {today}</div>
         </div>
-        <div className="ml-auto flex items-center gap-1.5">
+        {/* Controls */}
+        <div className="ml-auto flex items-center gap-2">
+          {/* Language toggle */}
+          <button
+            onClick={() => setLang(lang === 'en' ? 'th' : 'en')}
+            className="h-6 px-2 rounded text-[10px] font-semibold bg-white/15 hover:bg-white/25 text-white transition-colors border border-white/20"
+            title="Toggle language"
+          >
+            {lang === 'en' ? 'TH' : 'EN'}
+          </button>
+          {/* Theme toggle */}
+          <button
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            className="h-6 w-6 rounded flex items-center justify-center bg-white/15 hover:bg-white/25 text-white transition-colors border border-white/20 text-[13px]"
+            title="Toggle theme"
+          >
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
           <span className="text-[10px] text-white/60">LIVE</span>
           <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
         </div>

@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { supabase, type Machine, type Attachment, type MachineAssignment } from '@/lib/supabase';
+import { supabase, type Machine, type Attachment, type MachineAssignment, type WorkOrder } from '@/lib/supabase';
+import { useLang } from '@/components/providers';
+import { translations } from '@/lib/i18n';
 
 const MACHINE_STATUS = ['Available','Working','Maintenance'] as const;
 const STATUS_STYLE: Record<string,{bg:string;text:string}> = {
@@ -11,11 +13,17 @@ const STATUS_STYLE: Record<string,{bg:string;text:string}> = {
 };
 
 export default function MachinesPage() {
+  const { lang } = useLang();
+  const t = translations[lang];
+  const mt = t.machines;
+  const cm = t.common;
+
   const [machines,    setMachines]    = useState<Machine[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [assignments, setAssignments] = useState<MachineAssignment[]>([]);
+  const [workOrders,  setWorkOrders]  = useState<WorkOrder[]>([]);
   const [loading,     setLoading]     = useState(true);
-  const [tab,         setTab]         = useState<'machines'|'attachments'>('machines');
+  const [tab,         setTab]         = useState<'machines'|'attachments'|'kpi'>('machines');
 
   // Machine form
   const [editM,    setEditM]    = useState<Machine|null>(null);
@@ -33,16 +41,42 @@ export default function MachinesPage() {
   const [selectedAtt,  setSelectedAtt]    = useState('');
 
   const load = useCallback(async () => {
-    const [{ data: m }, { data: a }, { data: ma }] = await Promise.all([
+    const [{ data: m }, { data: a }, { data: ma }, { data: wo }] = await Promise.all([
       supabase.from('machines').select('*').order('machine_code'),
       supabase.from('attachments').select('*').eq('is_active', true).order('attachment_code'),
       supabase.from('machine_assignments').select('*').is('released_date', null),
+      supabase.from('work_orders').select('*').not('status','eq','Cancelled'),
     ]);
     setMachines(m||[]);
     setAttachments(a||[]);
     setAssignments(ma||[]);
+    setWorkOrders(wo||[]);
     setLoading(false);
   }, []);
+
+  // Machine KPI
+  const machineKPI = useMemo(() => {
+    const map: Record<string,{name:string;code:string;total:number;completed:number;inProgress:number;attCount:Record<string,number>}> = {};
+    machines.forEach(m => {
+      map[m.id] = { name: m.machine_name||m.machine_code, code: m.machine_code, total:0, completed:0, inProgress:0, attCount:{} };
+    });
+    workOrders.forEach(o => {
+      const mid = o.assigned_machine_id;
+      if (!mid) return;
+      if (!map[mid]) map[mid] = { name:mid, code:'', total:0, completed:0, inProgress:0, attCount:{} };
+      map[mid].total++;
+      if (o.status==='Completed')   map[mid].completed++;
+      if (o.status==='In Progress') map[mid].inProgress++;
+      if (o.assigned_attachment_id) {
+        map[mid].attCount[o.assigned_attachment_id] = (map[mid].attCount[o.assigned_attachment_id]||0)+1;
+      }
+    });
+    return Object.entries(map).map(([id,v]) => {
+      const topAttId = Object.entries(v.attCount).sort((a,b)=>b[1]-a[1])[0]?.[0];
+      const topAtt   = topAttId ? (attachments.find(a=>a.id===topAttId)?.attachment_name||topAttId) : '—';
+      return { id, ...v, pct: v.total>0?Math.round(v.completed/v.total*100):0, mostUsed: topAtt };
+    }).sort((a,b) => b.total - a.total);
+  }, [machines, workOrders, attachments]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -134,24 +168,25 @@ export default function MachinesPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-base font-bold">Machines & Attachments</h1>
+          <h1 className="text-base font-bold">{mt.title}</h1>
           <p className="text-[11px] text-muted-foreground">{activeMachines.length} machines · {attachments.length} attachments</p>
         </div>
         <div className="flex gap-2">
-          <div className="flex border border-border rounded overflow-hidden text-[11px]">
-            <button onClick={()=>setTab('machines')}
-              className={['px-3 py-1.5', tab==='machines'?'bg-[#155d31] text-white':'text-muted-foreground'].join(' ')}>
-              Machines
-            </button>
-            <button onClick={()=>setTab('attachments')}
-              className={['px-3 py-1.5', tab==='attachments'?'bg-[#155d31] text-white':'text-muted-foreground'].join(' ')}>
-              Attachments
-            </button>
+          <div className="flex gap-1 border border-border rounded-lg p-0.5 bg-muted/30">
+            {(['machines','attachments','kpi'] as const).map(tb => (
+              <button key={tb} onClick={()=>setTab(tb)}
+                className={['px-3 py-1 rounded text-[11px] font-medium transition-colors',
+                  tab===tb?'bg-[#155d31] text-white':'text-muted-foreground hover:text-foreground'].join(' ')}>
+                {tb==='machines'?mt.listTab:tb==='attachments'?mt.attachTab:mt.kpiTab}
+              </button>
+            ))}
           </div>
-          <button onClick={() => {
-            if (tab === 'machines') { setCreating(true); setEditM(null); setMForm({machine_code:'',machine_name:'',machine_type:'',status:'Available',is_active:true}); }
-            else { setCreatingA(true); setEditA(null); setAForm({attachment_code:'',attachment_name:'',attachment_type:''}); }
-          }} className="px-3 py-1.5 rounded bg-[#155d31] text-white text-[11px] font-medium">+ Add</button>
+          {(tab==='machines'||tab==='attachments') && (
+            <button onClick={() => {
+              if (tab === 'machines') { setCreating(true); setEditM(null); setMForm({machine_code:'',machine_name:'',machine_type:'',status:'Available',is_active:true}); }
+              else { setCreatingA(true); setEditA(null); setAForm({attachment_code:'',attachment_name:'',attachment_type:''}); }
+            }} className="px-3 py-1.5 rounded bg-[#155d31] text-white text-[11px] font-medium">+ {cm.add}</button>
+          )}
         </div>
       </div>
 
@@ -217,10 +252,10 @@ export default function MachinesPage() {
           <div className="flex gap-2">
             <button onClick={saveMachine} disabled={saving || !mForm.machine_code.trim()}
               className="px-4 py-1.5 rounded bg-[#155d31] text-white text-[11px] font-medium disabled:opacity-50">
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? cm.saving : cm.save}
             </button>
             <button onClick={() => { setEditM(null); setCreating(false); }}
-              className="px-4 py-1.5 rounded border border-border text-[11px]">Cancel</button>
+              className="px-4 py-1.5 rounded border border-border text-[11px]">{cm.cancel}</button>
           </div>
         </div>
       )}
@@ -241,11 +276,72 @@ export default function MachinesPage() {
           <div className="flex gap-2">
             <button onClick={saveAttachment} disabled={saving}
               className="px-4 py-1.5 rounded bg-[#155d31] text-white text-[11px] font-medium disabled:opacity-50">
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? cm.saving : cm.save}
             </button>
             <button onClick={() => { setEditA(null); setCreatingA(false); }}
-              className="px-4 py-1.5 rounded border border-border text-[11px]">Cancel</button>
+              className="px-4 py-1.5 rounded border border-border text-[11px]">{cm.cancel}</button>
           </div>
+        </div>
+      )}
+
+      {/* KPI Tab */}
+      {tab === 'kpi' && (
+        <div className="space-y-4">
+          {/* Summary row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: mt.totalJobs, value: machineKPI.reduce((s,m)=>s+m.total,0),     color:'text-foreground' },
+              { label: mt.completed, value: machineKPI.reduce((s,m)=>s+m.completed,0), color:'text-green-700' },
+              { label: 'In Progress', value: machineKPI.reduce((s,m)=>s+m.inProgress,0),color:'text-amber-600' },
+              { label: cm.active,    value: activeMachines.length,                       color:'text-blue-600' },
+            ].map(k => (
+              <div key={k.label} className="bg-card border border-border rounded-lg p-3">
+                <div className={`text-2xl font-bold ${k.color}`}>{k.value}</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">{k.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {machineKPI.filter(m=>m.total>0).length === 0 ? (
+            <div className="py-10 text-center text-muted-foreground text-[12px]">No work order data yet</div>
+          ) : (
+            <div className="rounded-lg border border-border overflow-hidden text-[11px]">
+              <div className="grid px-3 py-2 bg-muted/40 border-b border-border text-[10px] font-semibold text-muted-foreground uppercase tracking-wide gap-2"
+                style={{gridTemplateColumns:'90px 1fr 70px 70px 70px 1fr 110px'}}>
+                <div>{mt.code}</div>
+                <div>{mt.name}</div>
+                <div className="text-center">{mt.totalJobs}</div>
+                <div className="text-center">{mt.completed}</div>
+                <div className="text-center">In Prog.</div>
+                <div>{mt.mostUsed}</div>
+                <div>{mt.utilization}</div>
+              </div>
+              <div className="divide-y divide-border">
+                {machineKPI.map(m => {
+                  const pctColor = m.pct>=80?'#15803d':m.pct>=50?'#d97706':'#dc2626';
+                  return (
+                    <div key={m.id} className="grid px-3 py-2.5 items-center gap-2 hover:bg-muted/20"
+                      style={{gridTemplateColumns:'90px 1fr 70px 70px 70px 1fr 110px'}}>
+                      <div className="font-mono font-bold">{m.code}</div>
+                      <div className="truncate">{m.name}</div>
+                      <div className="text-center font-semibold">{m.total}</div>
+                      <div className="text-center text-green-700 font-semibold">{m.completed}</div>
+                      <div className="text-center text-amber-600">{m.inProgress}</div>
+                      <div className="truncate text-muted-foreground text-[10px]">{m.mostUsed}</div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="flex-1 h-1.5 bg-muted rounded overflow-hidden">
+                          <div className="h-full rounded" style={{width:`${m.pct}%`,background:pctColor}}/>
+                        </div>
+                        <span className="text-[10px] font-bold w-8 text-right" style={{color:pctColor}}>
+                          {m.total>0?`${m.pct}%`:'—'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

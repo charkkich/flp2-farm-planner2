@@ -84,6 +84,25 @@ export interface MachineAssignment {
   created_at: string;
 }
 
+export type WorkOrderStatus = 'Planned' | 'In Progress' | 'Completed' | 'Cancelled';
+export type WorkOrderTaskType = 'Plowing' | 'Harrowing' | 'Ridging';
+
+export interface WorkOrder {
+  id: string;
+  cp_id: string | null;
+  field_code: string | null;
+  task_type: WorkOrderTaskType;
+  status: WorkOrderStatus;
+  assigned_worker_id: string | null;
+  assigned_machine_id: string | null;
+  assigned_attachment_id: string | null;
+  planned_date: string | null;
+  actual_date: string | null;
+  remarks: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface PreparationTask {
   id: string;
   crop_plan_id: string | null;

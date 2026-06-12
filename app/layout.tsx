@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { TopNav } from '@/components/top-nav';
 import { Toaster } from '@/components/ui/toaster';
+import { Providers } from '@/components/providers';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -15,13 +16,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="th" className="dark">
       <body className={inter.className}>
-        <div className="flex flex-col h-screen overflow-hidden">
-          <TopNav />
-          <main className="flex-1 overflow-y-auto bg-background">
-            {children}
-          </main>
-        </div>
-        <Toaster />
+        <Providers>
+          <div className="flex flex-col h-screen overflow-hidden">
+            <TopNav />
+            <main className="flex-1 overflow-y-auto bg-background">
+              {children}
+            </main>
+          </div>
+          <Toaster />
+        </Providers>
       </body>
     </html>
   );

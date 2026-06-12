@@ -1,0 +1,152 @@
+export type Lang = 'en' | 'th';
+
+export const translations = {
+  en: {
+    nav: {
+      dashboard: 'Dashboard', fields: 'Fields', cropPlans: 'Crop Plans',
+      planning: 'Planning', workOrders: 'Work Orders', workers: 'Workers',
+      machines: 'Machines', weather: 'Weather', map: 'Map', reports: 'Reports',
+    },
+    common: {
+      add: 'Add', edit: 'Edit', save: 'Save', saving: 'Saving…', cancel: 'Cancel',
+      delete: 'Delete', search: 'Search…', all: 'All', active: 'Active',
+      inactive: 'Inactive', none: '— None —', loading: 'Loading…',
+      noData: 'No data found', export: 'Export', exportCSV: 'Export CSV',
+      yes: 'Yes', no: 'No', confirm: 'Confirm', close: 'Close',
+      actions: 'Actions', total: 'Total', status: 'Status', date: 'Date',
+      remarks: 'Remarks', notes: 'Notes', code: 'Code', name: 'Name',
+      type: 'Type', area: 'Area', progress: 'Progress',
+    },
+    status: {
+      Planned: 'Planned', Preparing: 'Preparing', Ready: 'Ready',
+      Planted: 'Planted', Harvested: 'Harvested', Overdue: 'Overdue',
+      'In Progress': 'In Progress', Completed: 'Completed', Cancelled: 'Cancelled',
+      Available: 'Available', Working: 'Working', Maintenance: 'Maintenance',
+      Empty: 'Empty',
+    },
+    dashboard: {
+      title: 'Operations Center', totalCP: 'Total CP', preparing: 'Preparing',
+      ready: 'Ready', delayed: 'Delayed', onTimePct: 'On-Time %',
+      priorityTasks: "Today's Priority", pipeline: 'Preparation Pipeline',
+      upcoming: 'Upcoming Planting (14 Days)', workerKPI: 'Worker Performance',
+      machineKPI: 'Machine Utilization', delayedFields: 'Delayed Fields',
+      weather: 'Weather', noHeavyRain: '☀️ No heavy rain expected',
+      daysLeft: 'd left', daysLate: 'd late', urgency: 'Urgency',
+      activeJobs: 'active', workers: 'workers', machines: 'machines',
+      onTime: 'On Time', completedJobs: 'jobs done', utilization: 'utilization',
+      rank: 'Rank', worker: 'Worker', machine: 'Machine', attachment: 'Attachment',
+      jobs: 'Jobs',
+    },
+    workOrders: {
+      title: 'Work Orders', new: 'New Work Order', edit: 'Edit Work Order',
+      taskType: 'Task Type', Plowing: 'Plowing', Harrowing: 'Harrowing',
+      Ridging: 'Ridging', plannedDate: 'Planned Date', actualDate: 'Actual Date',
+      worker: 'Assign Worker', machine: 'Assign Tractor', attachment: 'Assign Attachment',
+      remarks: 'Remarks', field: 'Field Code', cpNo: 'CP No',
+      markDone: 'Mark Done', markProgress: 'Start', cancel: 'Cancel WO',
+      confirmDelete: 'Delete this work order?',
+      selectWorker: 'Select worker…', selectMachine: 'Select tractor…',
+      selectAttachment: 'Select attachment…', selectField: 'Select field…',
+    },
+    workers: {
+      title: 'Workers', code: 'Code', name: 'Name', position: 'Position',
+      kpiTab: 'KPI', listTab: 'List', completedJobs: 'Completed', onTime: 'On Time',
+      late: 'Late', onTimePct: 'On-Time %', ranking: 'Ranking', noJobs: 'No completed jobs yet',
+    },
+    machines: {
+      title: 'Machines & Attachments', code: 'Code', name: 'Name', type: 'Type',
+      status: 'Status', attachment: 'Attachment', totalJobs: 'Total Jobs',
+      completed: 'Completed', utilization: 'Utilization', mostUsed: 'Most Used Attachment',
+      kpiTab: 'KPI', listTab: 'Machines', attachTab: 'Attachments',
+    },
+    fields: {
+      title: 'Fields', code: 'Field Code', area: 'Area', currentCrop: 'Crop',
+      cpNo: 'CP No', status: 'Status', readyDate: 'Ready Date', plantDate: 'Plant Date',
+      worker: 'Worker', machine: 'Machine', prepStatus: 'Prep Status', progress: 'Progress %',
+      addField: 'Add Field', confirmDelete: 'Are you sure you want to remove field',
+      removeField: 'Remove Field',
+    },
+    reports: {
+      title: 'Reports', fieldSummary: 'Field Status Summary', cpSummary: 'Crop Plan Summary',
+      delayed: 'Delayed Fields', machineWorker: 'Machine & Worker Summary',
+      workerPerf: 'Worker Performance', machineUtil: 'Machine Utilization',
+      exportAll: 'Export All', daysLate: 'd late',
+    },
+  },
+  th: {
+    nav: {
+      dashboard: 'แดชบอร์ด', fields: 'แปลง', cropPlans: 'แผนปลูก',
+      planning: 'วางแผน', workOrders: 'คำสั่งงาน', workers: 'คนงาน',
+      machines: 'เครื่องจักร', weather: 'อากาศ', map: 'แผนที่', reports: 'รายงาน',
+    },
+    common: {
+      add: 'เพิ่ม', edit: 'แก้ไข', save: 'บันทึก', saving: 'กำลังบันทึก…', cancel: 'ยกเลิก',
+      delete: 'ลบ', search: 'ค้นหา…', all: 'ทั้งหมด', active: 'ใช้งาน',
+      inactive: 'ไม่ใช้งาน', none: '— ไม่มี —', loading: 'กำลังโหลด…',
+      noData: 'ไม่พบข้อมูล', export: 'ส่งออก', exportCSV: 'ส่งออก CSV',
+      yes: 'ใช่', no: 'ไม่', confirm: 'ยืนยัน', close: 'ปิด',
+      actions: 'จัดการ', total: 'รวม', status: 'สถานะ', date: 'วันที่',
+      remarks: 'หมายเหตุ', notes: 'บันทึก', code: 'รหัส', name: 'ชื่อ',
+      type: 'ประเภท', area: 'พื้นที่', progress: 'ความก้าวหน้า',
+    },
+    status: {
+      Planned: 'วางแผน', Preparing: 'กำลังเตรียม', Ready: 'พร้อม',
+      Planted: 'ปลูกแล้ว', Harvested: 'เก็บเกี่ยวแล้ว', Overdue: 'เกินกำหนด',
+      'In Progress': 'กำลังทำ', Completed: 'เสร็จสิ้น', Cancelled: 'ยกเลิก',
+      Available: 'ว่าง', Working: 'ทำงาน', Maintenance: 'ซ่อมบำรุง',
+      Empty: 'ว่างเปล่า',
+    },
+    dashboard: {
+      title: 'ศูนย์ปฏิบัติการ', totalCP: 'แผนทั้งหมด', preparing: 'กำลังเตรียม',
+      ready: 'พร้อมแล้ว', delayed: 'ล่าช้า', onTimePct: 'ตรงเวลา %',
+      priorityTasks: 'งานเร่งด่วนวันนี้', pipeline: 'ขั้นตอนการเตรียม',
+      upcoming: 'กำหนดปลูก 14 วัน', workerKPI: 'ผลงานคนงาน',
+      machineKPI: 'การใช้เครื่องจักร', delayedFields: 'แปลงที่ล่าช้า',
+      weather: 'สภาพอากาศ', noHeavyRain: '☀️ ไม่มีฝนหนักใน 14 วัน',
+      daysLeft: 'วันเหลือ', daysLate: 'วันช้า', urgency: 'ความเร่งด่วน',
+      activeJobs: 'งาน', workers: 'คนงาน', machines: 'เครื่องจักร',
+      onTime: 'ตรงเวลา', completedJobs: 'งานเสร็จ', utilization: 'การใช้งาน',
+      rank: 'อันดับ', worker: 'คนงาน', machine: 'เครื่องจักร', attachment: 'อุปกรณ์',
+      jobs: 'งาน',
+    },
+    workOrders: {
+      title: 'คำสั่งงาน', new: 'คำสั่งงานใหม่', edit: 'แก้ไขคำสั่งงาน',
+      taskType: 'ประเภทงาน', Plowing: 'ไถพรวน', Harrowing: 'คราด',
+      Ridging: 'ยกร่อง', plannedDate: 'วันที่วางแผน', actualDate: 'วันที่ทำจริง',
+      worker: 'มอบหมายคนงาน', machine: 'มอบหมายรถแทรกเตอร์', attachment: 'มอบหมายอุปกรณ์',
+      remarks: 'หมายเหตุ', field: 'รหัสแปลง', cpNo: 'เลข CP',
+      markDone: 'ทำเสร็จแล้ว', markProgress: 'เริ่มงาน', cancel: 'ยกเลิกงาน',
+      confirmDelete: 'ลบคำสั่งงานนี้?',
+      selectWorker: 'เลือกคนงาน…', selectMachine: 'เลือกรถแทรกเตอร์…',
+      selectAttachment: 'เลือกอุปกรณ์…', selectField: 'เลือกแปลง…',
+    },
+    workers: {
+      title: 'คนงาน', code: 'รหัส', name: 'ชื่อ', position: 'ตำแหน่ง',
+      kpiTab: 'KPI', listTab: 'รายชื่อ', completedJobs: 'งานเสร็จ', onTime: 'ตรงเวลา',
+      late: 'ล่าช้า', onTimePct: 'ตรงเวลา %', ranking: 'อันดับ', noJobs: 'ยังไม่มีงานเสร็จ',
+    },
+    machines: {
+      title: 'เครื่องจักร & อุปกรณ์', code: 'รหัส', name: 'ชื่อ', type: 'ประเภท',
+      status: 'สถานะ', attachment: 'อุปกรณ์', totalJobs: 'งานทั้งหมด',
+      completed: 'เสร็จสิ้น', utilization: 'การใช้งาน', mostUsed: 'อุปกรณ์ที่ใช้บ่อย',
+      kpiTab: 'KPI', listTab: 'เครื่องจักร', attachTab: 'อุปกรณ์',
+    },
+    fields: {
+      title: 'แปลง', code: 'รหัสแปลง', area: 'พื้นที่', currentCrop: 'พืช',
+      cpNo: 'เลข CP', status: 'สถานะ', readyDate: 'วันพร้อม', plantDate: 'วันปลูก',
+      worker: 'คนงาน', machine: 'เครื่องจักร', prepStatus: 'สถานะเตรียม', progress: 'ความก้าวหน้า %',
+      addField: 'เพิ่มแปลง', confirmDelete: 'ต้องการลบแปลง', removeField: 'ลบแปลง',
+    },
+    reports: {
+      title: 'รายงาน', fieldSummary: 'สรุปสถานะแปลง', cpSummary: 'สรุปแผนปลูก',
+      delayed: 'แปลงที่ล่าช้า', machineWorker: 'สรุปเครื่องจักรและคนงาน',
+      workerPerf: 'ผลงานคนงาน', machineUtil: 'การใช้งานเครื่องจักร',
+      exportAll: 'ส่งออกทั้งหมด', daysLate: 'วันช้า',
+    },
+  },
+} as const;
+
+export function tr(lang: Lang, section: keyof typeof translations.en, key: string): string {
+  const s = (translations[lang] as any)[section];
+  return s?.[key] ?? (translations.en as any)[section]?.[key] ?? key;
+}

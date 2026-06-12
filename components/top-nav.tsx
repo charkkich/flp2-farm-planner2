@@ -16,16 +16,17 @@ export function TopNav() {
   });
 
   const NAV = [
-    { href: '/',            label: n.dashboard,   icon: '⊞' },
-    { href: '/fields',      label: n.fields,      icon: '⊡' },
-    { href: '/crop-plans',  label: n.cropPlans,   icon: '📋' },
-    { href: '/planning',    label: n.planning,    icon: '📅' },
-    { href: '/work-orders', label: n.workOrders,  icon: '🔧' },
-    { href: '/workers',     label: n.workers,     icon: '👷' },
-    { href: '/machines',    label: n.machines,    icon: '🚜' },
-    { href: '/weather',     label: n.weather,     icon: '🌧' },
-    { href: '/map',         label: n.map,         icon: '🗺' },
-    { href: '/reports',     label: n.reports,     icon: '📊' },
+    { href: '/',             label: n.dashboard,   icon: '⊞' },
+    { href: '/daily-tasks',  label: lang === 'th' ? 'งานวันนี้' : 'Daily Tasks', icon: '✅' },
+    { href: '/fields',       label: n.fields,      icon: '⊡' },
+    { href: '/crop-plans',   label: n.cropPlans,   icon: '📋' },
+    { href: '/planning',     label: n.planning,    icon: '📅' },
+    { href: '/work-orders',  label: n.workOrders,  icon: '🔧' },
+    { href: '/workers',      label: n.workers,     icon: '👷' },
+    { href: '/machines',     label: n.machines,    icon: '🚜' },
+    { href: '/weather',      label: n.weather,     icon: '🌧' },
+    { href: '/map',          label: n.map,         icon: '🗺' },
+    { href: '/reports',      label: n.reports,     icon: '📊' },
   ];
 
   return (

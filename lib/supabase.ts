@@ -84,8 +84,9 @@ export interface MachineAssignment {
   created_at: string;
 }
 
-export type WorkOrderStatus = 'Planned' | 'In Progress' | 'Completed' | 'Cancelled';
-export type WorkOrderTaskType = 'Plowing' | 'Harrowing' | 'Ridging';
+export type WorkOrderStatus   = 'Planned' | 'In Progress' | 'Completed' | 'Cancelled';
+export type WorkOrderTaskType = 'Plowing' | 'Harrowing' | 'Ridging'
+                              | 'Re-Plowing' | 'Re-Harrowing' | 'Re-Ridging';
 
 export interface WorkOrder {
   id: string;
@@ -98,9 +99,37 @@ export interface WorkOrder {
   assigned_attachment_id: string | null;
   planned_date: string | null;
   actual_date: string | null;
+  actual_start: string | null;
+  actual_finish: string | null;
+  area_m2: number | null;
   remarks: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export type ActivityType =
+  | 'Plowing' | 'Harrowing' | 'Ridging'
+  | 'Re-Plowing' | 'Re-Harrowing' | 'Re-Ridging'
+  | 'Planting' | 'Harvest' | 'Rain Event' | 'Inspection' | 'Rework';
+
+export type RainIntensity = 'Light' | 'Moderate' | 'Heavy';
+
+export interface FieldActivity {
+  id: string;
+  field_code: string;
+  cp_id: string | null;
+  work_order_id: string | null;
+  activity_type: ActivityType;
+  activity_date: string;
+  worker_id: string | null;
+  machine_id: string | null;
+  attachment_id: string | null;
+  area_m2: number | null;
+  duration_minutes: number | null;
+  rain_intensity: RainIntensity | null;
+  requires_rework: boolean;
+  remarks: string | null;
+  created_at: string;
 }
 
 export interface PreparationTask {
@@ -204,4 +233,55 @@ export function getPlanPriority(plan: CropPlan): 'High' | 'Medium' | 'Low' {
   if (dl !== null && dl <= 3) return 'High';
   if (dl !== null && dl <= 7) return 'Medium';
   return 'Low';
+}
+
+// ── Scheduling helpers ────────────────────────────────────────────────────────
+
+/** Add days to a date string (YYYY-MM-DD), returns YYYY-MM-DD */
+export function addDays(iso: string, days: number): string {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
+/** Later of two YYYY-MM-DD date strings */
+export function laterOf(a: string, b: string): string {
+  return a >= b ? a : b;
+}
+
+/**
+ * Given a Required Ready Date, return auto-scheduled planned dates for the
+ * three preparation tasks. Each task is pushed back if it would fall before
+ * today.
+ *
+ * Buffer assumptions (conservative, field may vary):
+ *   Ridging    must start ≤ RRD − 2 days
+ *   Harrowing  must start ≤ RRD − 5 days
+ *   Plowing    must start ≤ RRD − 9 days
+ */
+export function autoScheduleDates(requiredReadyDate: string): {
+  plow: string; harrow: string; ridge: string;
+} {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const todayStr = today.toISOString().split('T')[0];
+
+  const plow   = laterOf(todayStr, addDays(requiredReadyDate, -9));
+  const harrow = laterOf(addDays(plow, 3),  addDays(requiredReadyDate, -5));
+  const ridge  = laterOf(addDays(harrow, 2), addDays(requiredReadyDate, -2));
+
+  return { plow, harrow, ridge };
+}
+
+/** Format duration in minutes → "1h 23m" */
+export function fmtDuration(minutes: number | null): string {
+  if (!minutes || minutes <= 0) return '—';
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+/** m² → rai (1 rai = 1,600 m²) */
+export function m2ToRai(m2: number | null): string {
+  if (!m2) return '—';
+  return `${(m2 / 1600).toFixed(2)} rai`;
 }

@@ -6,7 +6,7 @@ import { useLang } from '@/components/providers';
 import { translations } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 
-const TASK_TYPES = ['Plowing', 'Harrowing', 'Ridging'] as const;
+const TASK_TYPES = ['Plowing', 'Harrowing', 'Ridging', 'Re-Plowing', 'Re-Harrowing', 'Re-Ridging'] as const;
 const WO_STATUSES = ['Planned', 'In Progress', 'Completed', 'Cancelled'] as const;
 
 const STATUS_STYLE: Record<string, { bg: string; text: string }> = {
